@@ -58,7 +58,7 @@ jobs:
           
           cat << EOF | sudo tee /etc/kolla/kolla-build.conf
           [DEFAULT]
-          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          namespace = ${{ env.OWNER }}
           push = true
           tag = ${{ matrix.openstack_release }}
           base = ${{ matrix.base_distro }}
