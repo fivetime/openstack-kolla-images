@@ -47,62 +47,47 @@ jobs:
 
       - name: Install Kolla and Docker
         run: |
-          # 按照官方文档安装kolla和docker
           python3 -m pip install --upgrade pip
           python3 -m pip install kolla
           python3 -m pip install docker
           # 确认安装成功
           python3 -m pip list | grep kolla
           python3 -m pip list | grep docker
-          # 验证kolla-build命令可用
-          which kolla-build || echo "kolla-build not found in PATH"
-          
+          # 显示kolla-build版本
+          kolla-build --version || echo "Cannot check version"
+
       - name: Debug environment
         run: |
           python3 --version
           pip --version
           docker --version
-          echo $PATH
-          # 查找kolla-build位置
-          find ~/.local -name kolla-build
-          # 添加可能的路径
           export PATH=$PATH:~/.local/bin
-          echo $PATH
-          which kolla-build || echo "Still not found after PATH update"
+          which kolla-build
+
+      - name: Create kolla-build.conf
+        run: |
+          # 创建配置目录
+          sudo mkdir -p /etc/kolla
+          
+          # 创建kolla-build.conf配置文件
+          cat << EOF | sudo tee /etc/kolla/kolla-build.conf
+          [DEFAULT]
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          push = true
+          tag = ${{ matrix.openstack_release }}
+          base = ${{ matrix.base_distro }}
+          registry = ${{ env.REGISTRY }}
+          debug = true
+          EOF
+          
+          # 显示配置文件
+          cat /etc/kolla/kolla-build.conf
 
       - name: Build and push image
         run: |
-          # 设置镜像标签
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.OWNER }}/kolla-${{ matrix.base_distro }}-${{ matrix.service }}:${{ matrix.openstack_release }}"
-          
-          echo "Building image: ${IMAGE_NAME}"
-          
           # 添加可能的路径
           export PATH=$PATH:~/.local/bin
           
-          # 尝试使用python模块直接执行
-          if ! which kolla-build; then
-            echo "Using Python module to run kolla-build"
-            sudo -E python3 -m kolla.cmd.build \
-              --base ${{ matrix.base_distro }} \
-              --type source \
-              --tag ${{ matrix.openstack_release }} \
-              --push \
-              --registry ${{ env.REGISTRY }}/${{ env.OWNER }} \
-              --registry-namespace "" \
-              --verbose \
-              --debug \
-              ${{ matrix.service }}
-          else
-            echo "Using kolla-build command"
-            sudo -E $(which kolla-build) \
-              --base ${{ matrix.base_distro }} \
-              --type source \
-              --tag ${{ matrix.openstack_release }} \
-              --push \
-              --registry ${{ env.REGISTRY }}/${{ env.OWNER }} \
-              --registry-namespace "" \
-              --verbose \
-              --debug \
-              ${{ matrix.service }}
-          fi
+          # 构建镜像
+          echo "Building image for ${{ matrix.service }}"
+          sudo -E $(which kolla-build) ${{ matrix.service }}
