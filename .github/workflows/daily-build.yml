@@ -16,7 +16,6 @@ jobs:
     strategy:
       fail-fast: false  # 即使某个任务失败，也继续执行其他任务
       matrix:
-        # 仅构建一个服务进行测试
         service: [
           "keystone"
         ]
