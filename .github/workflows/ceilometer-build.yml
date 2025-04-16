@@ -65,6 +65,7 @@ jobs:
           registry = ${{ env.REGISTRY }}
           build_args = {"org.opencontainers.image.source":"https://github.com/${{ github.repository }}"}
           skip_existing = true
+          pull = true
           debug = true
           
           # 配置源代码仓库地址

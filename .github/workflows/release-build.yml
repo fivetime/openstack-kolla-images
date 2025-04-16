@@ -82,6 +82,7 @@ jobs:
           registry = ${{ env.REGISTRY }}
           build_args = {"org.opencontainers.image.source":"https://github.com/${{ github.repository }}"}
           skip_existing = true
+          pull = true
           
           # 配置源代码仓库位置
           [openstack-base]
@@ -260,4 +261,4 @@ jobs:
       - name: Build and push image
         run: |
           echo "Building image for ${{ matrix.service }}"
-          sudo -E python3 -m kolla.cmd.build ${{ matrix.service }}
+          sudo -E python3 -m kolla.cmd.build --skip-existing --pull ${{ matrix.service }}
