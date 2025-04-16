@@ -23,7 +23,8 @@ jobs:
           "ubuntu"
         ]
         openstack_release: [
-          "2024.2"
+          "2024.2",
+          "2025.1"
         ]
 
     steps:
@@ -50,23 +51,14 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install kolla
           python3 -m pip install docker
-          # 确认安装成功
-          python3 -m pip list | grep kolla
-          python3 -m pip list | grep docker
+          # 添加本地bin目录到PATH
+          echo "~/.local/bin" >> $GITHUB_PATH
           # 显示kolla-build版本
           kolla-build --version || echo "Cannot check version"
 
-      - name: Debug environment
-        run: |
-          python3 --version
-          pip --version
-          docker --version
-          export PATH=$PATH:~/.local/bin
-          which kolla-build
-
       - name: Create kolla-build.conf
         run: |
-          # 创建配置目录
+          # 创建kolla配置目录
           sudo mkdir -p /etc/kolla
           
           # 创建kolla-build.conf配置文件
@@ -78,6 +70,12 @@ jobs:
           base = ${{ matrix.base_distro }}
           registry = ${{ env.REGISTRY }}
           debug = true
+          
+          # 配置OpenStack源代码位置
+          [keystone-base]
+          type = git
+          location = https://opendev.org/openstack/keystone
+          reference = stable/${{ matrix.openstack_release }}
           EOF
           
           # 显示配置文件
@@ -85,9 +83,6 @@ jobs:
 
       - name: Build and push image
         run: |
-          # 添加可能的路径
-          export PATH=$PATH:~/.local/bin
-          
           # 构建镜像
           echo "Building image for ${{ matrix.service }}"
-          sudo -E $(which kolla-build) ${{ matrix.service }}
+          sudo -E kolla-build ${{ matrix.service }}
