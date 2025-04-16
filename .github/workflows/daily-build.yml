@@ -1,0 +1,74 @@
+name: Build Kolla Images
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # 允许手动触发
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        # 为了测试，我们先只构建几个关键服务
+        service: [
+          "keystone", 
+          "mariadb", 
+          "rabbitmq"
+        ]
+        base_distro: [
+          "ubuntu"
+        ]
+        openstack_release: [
+          "2024.2"
+        ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.CR_PAT }}
+
+      - name: Prepare Kolla Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip install -r requirements.txt
+          pip install .
+
+      - name: Build and push image
+        run: |
+          # 设置镜像标签
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.OWNER }}/kolla-${{ matrix.base_distro }}-${{ matrix.service }}:${{ matrix.openstack_release }}"
+          
+          # 添加标签以关联仓库
+          LABEL_ARGS="--label org.opencontainers.image.source=https://github.com/${{ github.repository }}"
+          
+          echo "Building image: ${IMAGE_NAME}"
+          
+          # 构建镜像并推送到GHCR
+          sudo kolla-build \
+            --base ${{ matrix.base_distro }} \
+            --type source \
+            --tag ${{ matrix.openstack_release }} \
+            --push \
+            --registry ${{ env.REGISTRY }}/${{ env.OWNER }} \
+            --registry-namespace "" \
+            ${{ matrix.service }}
