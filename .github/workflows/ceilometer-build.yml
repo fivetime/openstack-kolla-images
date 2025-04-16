@@ -70,6 +70,7 @@ jobs:
           type = git
           location = https://opendev.org/openstack/ceilometer
           reference = stable/${{ matrix.openstack_release }}
+          EOF
           
           cat /etc/kolla/kolla-build.conf
 
