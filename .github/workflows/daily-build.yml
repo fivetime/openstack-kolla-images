@@ -51,17 +51,13 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install kolla
           python3 -m pip install docker
-          # 添加本地bin目录到PATH
-          echo "~/.local/bin" >> $GITHUB_PATH
-          # 显示kolla-build版本
-          kolla-build --version || echo "Cannot check version"
+          # 找到kolla-build的位置
+          find / -name kolla-build 2>/dev/null || echo "kolla-build not found"
 
       - name: Create kolla-build.conf
         run: |
-          # 创建kolla配置目录
           sudo mkdir -p /etc/kolla
           
-          # 创建kolla-build.conf配置文件
           cat << EOF | sudo tee /etc/kolla/kolla-build.conf
           [DEFAULT]
           namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
@@ -71,18 +67,16 @@ jobs:
           registry = ${{ env.REGISTRY }}
           debug = true
           
-          # 配置OpenStack源代码位置
           [keystone-base]
           type = git
           location = https://opendev.org/openstack/keystone
           reference = stable/${{ matrix.openstack_release }}
           EOF
           
-          # 显示配置文件
           cat /etc/kolla/kolla-build.conf
 
       - name: Build and push image
         run: |
-          # 构建镜像
           echo "Building image for ${{ matrix.service }}"
-          sudo -E kolla-build ${{ matrix.service }}
+          # 使用python模块直接运行kolla-build
+          sudo -E python3 -m kolla.cmd.build ${{ matrix.service }}
