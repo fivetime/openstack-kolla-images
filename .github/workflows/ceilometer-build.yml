@@ -63,6 +63,8 @@ jobs:
           tag = ${{ matrix.openstack_release }}
           base = ${{ matrix.base_distro }}
           registry = ${{ env.REGISTRY }}
+          build_args = {"org.opencontainers.image.source":"https://github.com/${{ github.repository }}"}
+          skip_existing = true
           debug = true
           
           # 配置源代码仓库地址

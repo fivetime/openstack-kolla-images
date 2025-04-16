@@ -17,17 +17,24 @@ jobs:
       fail-fast: false
       matrix:
         service: [
-          "aodh", "barbican", "base", "bifrost", "blazar", "ceilometer", 
-          "cinder", "cloudkitty", "collectd", "cron", "cyborg", "designate", 
-          "dnsmasq", "etcd", "fluentd", "glance", "gnocchi", "grafana", 
+          # 基础镜像先构建
+          "base", "openstack-base",
+          
+          # 核心服务
+          "keystone", "glance", "nova", "neutron", "cinder", "placement",
+          
+          # 其他服务
+          "aodh", "barbican", "bifrost", "blazar", "ceilometer", 
+          "cloudkitty", "collectd", "cron", "cyborg", "designate", 
+          "dnsmasq", "etcd", "fluentd", "gnocchi", "grafana", 
           "hacluster", "haproxy", "heat", "horizon", "influxdb", 
-          "ironic-inspector", "ironic", "iscsid", "keepalived", "keystone", 
+          "ironic-inspector", "ironic", "iscsid", "keepalived", 
           "kolla-toolbox", "kuryr", "letsencrypt", "magnum", "manila", 
           "mariadb", "masakari", "memcached", "mistral", "multipathd", 
-          "networking-baremetal", "neutron", "nova", "octavia", "opensearch", 
-          "openstack-base", "openvswitch", "ovn", "ovsdpdk", "placement", 
-          "prometheus", "proxysql", "rabbitmq", "redis", "skyline", "tacker", 
-          "telegraf", "tgtd", "trove", "venus", "watcher", "zun"
+          "networking-baremetal", "octavia", "opensearch", 
+          "openvswitch", "ovn", "ovsdpdk", "prometheus", "proxysql", 
+          "rabbitmq", "redis", "skyline", "tacker", "telegraf", 
+          "tgtd", "trove", "venus", "watcher", "zun"
         ]
         base_distro: [
           "ubuntu"
@@ -74,8 +81,9 @@ jobs:
           base = ${{ matrix.base_distro }}
           registry = ${{ env.REGISTRY }}
           build_args = {"org.opencontainers.image.source":"https://github.com/${{ github.repository }}"}
+          skip_existing = true
           
-          # OpenStack源代码仓库配置
+          # 配置源代码仓库位置
           [openstack-base]
           type = git
           location = https://opendev.org/openstack/requirements
