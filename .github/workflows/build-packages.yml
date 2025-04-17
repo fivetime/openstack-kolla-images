@@ -1,0 +1,390 @@
+name: Build Kolla Images v2
+
+on:
+  workflow_dispatch:  # 手动触发
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  # 第一阶段：构建基础镜像
+  build-base:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        base_distro: [
+          "ubuntu"
+        ]
+        openstack_release: [
+          "2024.2",
+          "2025.1"
+        ]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.CR_PAT }}
+      
+      - name: Prune Docker builder cache
+        run: docker builder prune -af
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip python3-dev build-essential libffi-dev
+
+      - name: Install Kolla and Docker
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install kolla
+          python3 -m pip install docker
+
+      - name: Create kolla-build.conf
+        run: |
+          sudo mkdir -p /etc/kolla
+          
+          cat << EOF | sudo tee /etc/kolla/kolla-build.conf
+          [DEFAULT]
+          namespace = ${{ env.OWNER }}
+          # namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          push = true
+          tag = ${{ matrix.openstack_release }}
+          base = ${{ matrix.base_distro }}
+          registry = ${{ env.REGISTRY }}
+          build_args = {"org.opencontainers.image.source":"https://github.com/${{ github.repository }}"}
+          skip_existing = true
+          pull = true
+          
+          # 配置源代码仓库位置
+          [openstack-base]
+          type = git
+          location = https://opendev.org/openstack/requirements
+          reference = stable/${{ matrix.openstack_release }}
+          EOF
+          
+          cat /etc/kolla/kolla-build.conf
+
+      - name: Build and push base images
+        run: |
+          echo "Building base images for ${{ matrix.base_distro }} and release ${{ matrix.openstack_release }}"
+          sudo -E python3 -m kolla.cmd.build --pull base openstack-base
+      
+      - name: Wait for images to be available
+        run: |
+          echo "Waiting for images to be fully available in registry..."
+          sleep 30  # 给一些额外时间确保镜像完全可用
+
+  # 第二阶段：构建服务镜像
+  build-services:
+    needs: build-base  # 依赖第一阶段完成
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        base_distro: [
+          "ubuntu"
+        ]
+        openstack_release: [
+          "2024.2",
+          "2025.1"
+        ]
+        service_group:
+          # 核心服务
+          - name: "身份认证服务"
+            services: ["keystone"]
+          
+          - name: "计算服务"
+            services: ["nova", "placement"]
+          
+          - name: "存储服务"
+            services: ["glance", "cinder"]
+          
+          - name: "网络服务"
+            services: ["neutron", "openvswitch", "ovn"]
+          
+          # 基础设施服务
+          - name: "数据库和消息队列"
+            services: ["mariadb", "rabbitmq", "proxysql"]
+          
+          - name: "缓存和存储支持"
+            services: ["redis", "memcached", "tgtd", "iscsid"]
+          
+          - name: "负载均衡和网络基础设施"
+            services: ["haproxy", "keepalived", "dnsmasq"]
+          
+          # 扩展服务
+          - name: "裸金属和边缘服务"
+            services: ["ironic", "ironic-inspector", "networking-baremetal", "bifrost"]
+          
+          - name: "容器和虚拟化服务"
+            services: ["zun", "kuryr", "magnum", "ovsdpdk"]
+          
+          - name: "编排和模板服务"
+            services: ["heat", "mistral"]
+          
+          - name: "共享文件系统和数据库服务"
+            services: ["manila", "trove"]
+          
+          - name: "计量和计费服务"
+            services: ["aodh", "ceilometer", "gnocchi", "cloudkitty"]
+          
+          - name: "监控和日志"
+            services: ["prometheus", "grafana", "fluentd", "telegraf", "collectd", "influxdb", "opensearch"]
+          
+          - name: "证书与安全服务"
+            services: ["barbican", "letsencrypt"]
+          
+          - name: "Web界面和API服务"
+            services: ["horizon", "skyline"]
+          
+          - name: "高可用性和故障恢复"
+            services: ["masakari", "hacluster"]
+          
+          - name: "资源调度和优化服务"
+            services: ["blazar", "watcher"]
+          
+          - name: "其他服务"
+            services: ["kolla-toolbox", "tacker", "venus", "designate", "cyborg", "etcd", "multipathd", "octavia", "cron"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.CR_PAT }}
+      
+      - name: Prune Docker builder cache
+        run: docker builder prune -af
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip python3-dev build-essential libffi-dev
+
+      - name: Install Kolla and Docker
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install kolla
+          python3 -m pip install docker
+
+      - name: Create kolla-build.conf
+        run: |
+          sudo mkdir -p /etc/kolla
+          
+          cat << EOF | sudo tee /etc/kolla/kolla-build.conf
+          [DEFAULT]
+          namespace = ${{ env.OWNER }}
+          # namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          push = true
+          tag = ${{ matrix.openstack_release }}
+          base = ${{ matrix.base_distro }}
+          registry = ${{ env.REGISTRY }}
+          build_args = {"org.opencontainers.image.source":"https://github.com/${{ github.repository }}"}
+          skip_existing = true
+          pull = true
+          
+          # 配置源代码仓库位置
+          [openstack-base]
+          type = git
+          location = https://opendev.org/openstack/requirements
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [aodh-base]
+          type = git
+          location = https://opendev.org/openstack/aodh
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [barbican-base]
+          type = git
+          location = https://opendev.org/openstack/barbican
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [bifrost-base]
+          type = git
+          location = https://opendev.org/openstack/bifrost
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [blazar-base]
+          type = git
+          location = https://opendev.org/openstack/blazar
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [ceilometer-base]
+          type = git
+          location = https://opendev.org/openstack/ceilometer
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [cinder-base]
+          type = git
+          location = https://opendev.org/openstack/cinder
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [cloudkitty-base]
+          type = git
+          location = https://opendev.org/openstack/cloudkitty
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [cyborg-base]
+          type = git
+          location = https://opendev.org/openstack/cyborg
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [designate-base]
+          type = git
+          location = https://opendev.org/openstack/designate
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [glance-base]
+          type = git
+          location = https://opendev.org/openstack/glance
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [gnocchi-base]
+          type = git
+          location = https://opendev.org/openstack/gnocchi
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [heat-base]
+          type = git
+          location = https://opendev.org/openstack/heat
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [horizon]
+          type = git
+          location = https://opendev.org/openstack/horizon
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [ironic-base]
+          type = git
+          location = https://opendev.org/openstack/ironic
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [ironic-inspector-base]
+          type = git
+          location = https://opendev.org/openstack/ironic-inspector
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [keystone-base]
+          type = git
+          location = https://opendev.org/openstack/keystone
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [kuryr-base]
+          type = git
+          location = https://opendev.org/openstack/kuryr
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [magnum-base]
+          type = git
+          location = https://opendev.org/openstack/magnum
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [manila-base]
+          type = git
+          location = https://opendev.org/openstack/manila
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [masakari-base]
+          type = git
+          location = https://opendev.org/openstack/masakari
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [mistral-base]
+          type = git
+          location = https://opendev.org/openstack/mistral
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [neutron-base]
+          type = git
+          location = https://opendev.org/openstack/neutron
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [networking-baremetal-base]
+          type = git
+          location = https://opendev.org/openstack/networking-baremetal
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [nova-base]
+          type = git
+          location = https://opendev.org/openstack/nova
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [octavia-base]
+          type = git
+          location = https://opendev.org/openstack/octavia
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [placement-base]
+          type = git
+          location = https://opendev.org/openstack/placement
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [skyline-base]
+          type = git
+          location = https://opendev.org/openstack/skyline-apiserver
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [skyline-console]
+          type = git
+          location = https://opendev.org/openstack/skyline-console
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [tacker-base]
+          type = git
+          location = https://opendev.org/openstack/tacker
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [trove-base]
+          type = git
+          location = https://opendev.org/openstack/trove
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [venus-base]
+          type = git
+          location = https://opendev.org/openstack/venus
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [watcher-base]
+          type = git
+          location = https://opendev.org/openstack/watcher
+          reference = stable/${{ matrix.openstack_release }}
+          
+          [zun-base]
+          type = git
+          location = https://opendev.org/openstack/zun
+          reference = stable/${{ matrix.openstack_release }}
+          EOF
+          
+          cat /etc/kolla/kolla-build.conf
+
+      - name: Build and push service images
+        run: |
+          echo "Building service group: ${{ matrix.service_group.name }} for ${{ matrix.base_distro }} and release ${{ matrix.openstack_release }}"
+          # 将矩阵中的服务转换为空格分隔的字符串
+          SERVICES="${{ join(' ', matrix.service_group.services) }}"
+          # 使用--skip-existing跳过已存在的镜像，--pull确保使用最新的基础镜像
+          sudo -E python3 -m kolla.cmd.build --skip-existing --pull $SERVICES
