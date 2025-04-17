@@ -18,7 +18,7 @@ jobs:
       matrix:
         service: [
           # 基础镜像先构建
-          "base", "openstack-base",
+          # "base", "openstack-base",
           
           # 核心服务
           "keystone", "glance", "nova", "neutron", "cinder", "placement",
