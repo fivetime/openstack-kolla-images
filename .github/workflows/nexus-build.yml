@@ -16,7 +16,7 @@ on:
       kubectl_version:
         description: 'kubectl version to install'
         required: false
-        default: 'v1.28.0'
+        default: 'v1.33.0'
       push_images:
         description: 'Push images to registry'
         required: false
@@ -95,7 +95,7 @@ jobs:
           
           # kubectl 版本配置
           [nexus]
-          kubectl_version = ${{ inputs.kubectl_version || 'v1.28.0' }}
+          kubectl_version = ${{ inputs.kubectl_version || 'v1.33.0' }}
           EOF
           
           sudo cp /tmp/kolla-build.conf /etc/kolla/kolla-build.conf
@@ -107,12 +107,16 @@ jobs:
         run: |
           echo "=== Debugging Kolla setup ==="
           
-          # 列出所有可构建的镜像
-          echo "Available images (first 30):"
-          kolla-build --list-images | head -30
+          # 列出标准镜像
+          echo "Standard available images (first 20):"
+          kolla-build --list-images | head -20
           
-          echo "=== Checking for nexus images in list ==="
+          echo "=== Checking for nexus in standard images ==="
           kolla-build --list-images | grep -i nexus || echo "No nexus images found in standard list"
+          
+          # 使用自定义目录列出镜像
+          echo "=== Checking custom docker directory images ==="
+          kolla-build --docker-dir docker --list-images | grep -i nexus || echo "No nexus images found in custom directory"
           
           echo "=== Checking nexus templates ==="
           if [ -d "docker/nexus" ]; then
@@ -164,10 +168,15 @@ jobs:
           echo "Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}"
           echo "Working directory: $(pwd)"
           
-          # 构建 nexus 基础镜像
-          echo "=== Starting nexus base build ==="
+          # 验证自定义模板目录
+          echo "=== Verifying custom templates ==="
+          ls -la docker/nexus/
+          
+          # 使用 --docker-dir 指定自定义模板目录
+          echo "=== Starting nexus base build with custom docker dir ==="
           kolla-build \
             --config-file /etc/kolla/kolla-build.conf \
+            --docker-dir docker \
             --debug \
             --retries 3 \
             ^nexus$ || {
@@ -188,6 +197,7 @@ jobs:
           echo "Building nexus-proxy image..."
           kolla-build \
             --config-file /etc/kolla/kolla-build.conf \
+            --docker-dir docker \
             --debug \
             --retries 3 \
             ^nexus-proxy$ || {
@@ -200,6 +210,7 @@ jobs:
           echo "Building nexus-dns image..."
           kolla-build \
             --config-file /etc/kolla/kolla-build.conf \
+            --docker-dir docker \
             --debug \
             --retries 3 \
             ^nexus-dns$ || {
@@ -331,7 +342,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
           echo "- Base OS: ${{ matrix.base_distro }}:${{ matrix.base_tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- kubectl version: ${{ inputs.kubectl_version || 'v1.28.0' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- kubectl version: ${{ inputs.kubectl_version || 'v1.33.0' }}" >> $GITHUB_STEP_SUMMARY
           echo "- Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload build logs
