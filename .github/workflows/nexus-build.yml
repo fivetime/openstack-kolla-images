@@ -90,10 +90,12 @@ jobs:
           pull = true
           squash = false
           
-          # Nexus 项目配置
-          [nexus-user]
-          uid = 42424
-          gid = 42424
+          EOF
+          
+          sudo cp /tmp/kolla-build.conf /etc/kolla/kolla-build.conf
+          
+          echo "=== Kolla configuration ==="
+          sudo cat /etc/kolla/kolla-build.conf
           EOF
           
           echo "=== Kolla Build Configuration ==="
@@ -116,9 +118,20 @@ jobs:
           echo "Service: ${{ matrix.service }}"
           echo "Base: ${{ matrix.base_distro }}:${{ matrix.base_tag }}"
           echo "Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}"
+          echo "Working directory: $(pwd)"
+          
+          # 确保 kolla-build 可用
+          echo "=== Verifying kolla-build ==="
+          which kolla-build
+          kolla-build --version
+          
+          # 检查可用的镜像模板
+          echo "=== Available templates ==="
+          kolla-build --list-images | grep -E "(base|nexus)" || echo "No nexus templates found yet"
           
           # 构建 nexus 相关的所有镜像（包括 proxy 和 dns 子镜像）
-          sudo -E kolla-build \
+          echo "=== Starting build ==="
+          kolla-build \
             --config-file /etc/kolla/kolla-build.conf \
             --debug \
             ${{ matrix.service }}
