@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       build_target:
-        description: 'What to build (all, keystone, horizon, nova, neutron, etc.)'
+        description: 'What to build (Tested: keystone horizon nova neutron glance cinder heat, etc.)'
         required: false
         default: 'keystone horizon'
         type: string
@@ -24,9 +24,9 @@ on:
         default: 'ubuntu'
         type: choice
         options:
-          - ubuntu
-          - centos
-          - debian
+          - ubuntu     # Ubuntu Noble 24.04 - Best tested
+          - rocky      # Rocky Linux 9 - Enterprise choice
+          - debian     # Debian Bullseye - Lightweight option
       push_images:
         description: 'Push images to registry'
         required: false
@@ -166,21 +166,53 @@ jobs:
           
           echo "=== Horizon template override created ==="
 
-      - name: List available images
+      - name: Validate build targets against support matrix
         run: |
-          echo "=== Listing available images ==="
-          kolla-build --list-images | head -20
-          echo "..."
-          echo "Total images available: $(kolla-build --list-images | wc -l)"
+          echo "=== Validating build targets against Kolla support matrix ==="
           
-          echo "=== Checking build targets ==="
+          # 定义经过测试的镜像 (T - Tested)
+          declare -A TESTED_IMAGES
+          TESTED_IMAGES[ubuntu]="barbican cinder cron dnsmasq etcd fluentd glance haproxy heat horizon keystone kolla-toolbox kuryr mariadb masakari memcached neutron nova placement rabbitmq swift tacker zun"
+          TESTED_IMAGES[rocky]="aodh barbican bifrost cinder cron dnsmasq etcd fluentd glance haproxy heat horizon ironic iscsid keepalived keystone kolla-toolbox kuryr masakari memcached mistral neutron nova octavia opensearch openvswitch placement prometheus rabbitmq swift tacker zun"
+          TESTED_IMAGES[debian]="cron fluentd glance heat horizon keystone kolla-toolbox mariadb neutron nova nova-spicehtml5proxy openvswitch placement rabbitmq tgtd"
+          
+          # 定义不可构建的镜像 (N - Not Available)
+          declare -A NOT_AVAILABLE
+          NOT_AVAILABLE[ubuntu]="hacluster-pcs nova-spicehtml5proxy ovsdpdk tgtd"
+          NOT_AVAILABLE[rocky]="hacluster-pcs nova-spicehtml5proxy ovsdpdk tgtd"
+          NOT_AVAILABLE[debian]="hacluster-pcs ovsdpdk"
+          
           BUILD_TARGETS="${{ inputs.build_target || 'keystone horizon' }}"
-          echo "Build targets: $BUILD_TARGETS"
+          BASE_DISTRO="${{ inputs.base_distro || 'ubuntu' }}"
           
+          echo "Build targets: $BUILD_TARGETS"
+          echo "Base distro: $BASE_DISTRO"
+          echo ""
+          
+          # 检查每个构建目标
           for target in $BUILD_TARGETS; do
-            echo "Images matching '$target':"
-            kolla-build --list-images | grep -i "$target" | head -5 || echo "  No matches found"
+            # 移除正则表达式符号进行检查
+            clean_target=$(echo "$target" | sed 's/[\^$]//g' | sed 's/-.*$//')
+          
+            echo "Checking: $clean_target"
+          
+            # 检查是否在测试列表中
+            if [[ " ${TESTED_IMAGES[$BASE_DISTRO]} " =~ " $clean_target " ]]; then
+              echo "  ✅ TESTED - $clean_target is fully tested on $BASE_DISTRO"
+            elif [[ " ${NOT_AVAILABLE[$BASE_DISTRO]} " =~ " $clean_target " ]]; then
+              echo "  ❌ NOT AVAILABLE - $clean_target cannot be built on $BASE_DISTRO"
+              echo "  Consider using a different base distro or removing this target"
+            else
+              echo "  ⚠️  UNTESTED - $clean_target may work but is not regularly tested on $BASE_DISTRO"
+              echo "  Build may succeed but functionality is not guaranteed"
+            fi
           done
+          
+          echo ""
+          echo "=== Support Matrix Summary for $BASE_DISTRO ==="
+          echo "Fully tested images: ${TESTED_IMAGES[$BASE_DISTRO]}"
+          echo ""
+          echo "📖 For complete support matrix see: https://docs.openstack.org/kolla/latest/support_matrix.html"
 
       - name: Build OpenStack images
         run: |
@@ -194,6 +226,19 @@ jobs:
           BUILD_ARGS="$BUILD_ARGS --base ${{ inputs.base_distro || 'ubuntu' }}"
           BUILD_ARGS="$BUILD_ARGS --namespace ${{ env.REGISTRY }}/${{ env.OWNER }}"
           BUILD_ARGS="$BUILD_ARGS --retries 3"
+          
+          # 根据基础发行版设置标签
+          case "${{ inputs.base_distro || 'ubuntu' }}" in
+            "ubuntu")
+              BUILD_ARGS="$BUILD_ARGS --base-tag 24.04"  # Ubuntu Noble
+              ;;
+            "rocky")
+              BUILD_ARGS="$BUILD_ARGS --base-tag 9"      # Rocky Linux 9
+              ;;
+            "debian")
+              BUILD_ARGS="$BUILD_ARGS --base-tag bullseye" # Debian Bullseye
+              ;;
+          esac
           
           # 如果启用 Horizon 插件，添加模板覆盖
           if [[ "${{ inputs.enable_all_horizon_plugins }}" == "true" || "${{ inputs.enable_all_horizon_plugins }}" == "" ]]; then
