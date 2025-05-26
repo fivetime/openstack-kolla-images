@@ -1,4 +1,4 @@
-name: Build Kolla OpenStack Images
+name: Build Images From Docker
 
 on:
   push:
