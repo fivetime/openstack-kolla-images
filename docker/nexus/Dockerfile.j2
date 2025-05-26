@@ -1,4 +1,4 @@
-FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
+FROM {{ namespace }}/{{ image_prefix }}base:{{ tag }}
 
 {% block labels %}
     LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}"
@@ -33,7 +33,7 @@ FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
 {% block nexus_kubectl_install %}
     # Install kubectl for service discovery
     RUN set -x \
-    && KUBECTL_VERSION="{{ kubectl_version | default('v1.28.0') }}" \
+    && KUBECTL_VERSION="{{ kubectl_version | default('v1.33.0') }}" \
     && curl -L -o /usr/local/bin/kubectl \
     "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
     && chmod +x /usr/local/bin/kubectl \
@@ -55,9 +55,8 @@ FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
     && chown -R nexus:nexus /var/log/nexus /etc/nexus /var/lib/nexus /var/run/nexus
 {% endblock %}
 
-{{ macros.kolla_patch_sources() }}
-
 {% block nexus_footer %}{% endblock %}
 {% block footer %}{% endblock %}
 
 USER nexus
+WORKDIR /var/lib/nexus
