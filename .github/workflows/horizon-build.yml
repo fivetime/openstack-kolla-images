@@ -20,6 +20,11 @@ on:
           - ubuntu
           - rocky
           - debian
+      push_images:
+        description: 'Push images to registry'
+        required: false
+        default: true
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
@@ -91,7 +96,7 @@ jobs:
           fi
 
       - name: Login to Container Registry
-        if: success() && github.event_name == 'push'
+        if: success() && (github.event_name == 'push' || inputs.push_images == true)
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -99,7 +104,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push Horizon image
-        if: success() && github.event_name == 'push'
+        if: success() && (github.event_name == 'push' || inputs.push_images == true)
         run: |
           echo "Pushing Horizon image..."
           for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" | grep horizon); do
