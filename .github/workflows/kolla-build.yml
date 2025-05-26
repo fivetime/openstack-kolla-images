@@ -3,18 +3,12 @@ name: Build Kolla OpenStack Images
 on:
   push:
     branches: [main, master]
-    paths:
-      - 'docker/**'
-      - '.github/workflows/kolla-build.yml'
   pull_request:
     branches: [main, master]
-    paths:
-      - 'docker/**'
-      - '.github/workflows/kolla-build.yml'
   workflow_dispatch:
     inputs:
       build_target:
-        description: 'What to build (Tested: keystone horizon nova neutron glance cinder heat, etc.)'
+        description: 'What to build (e.g. keystone horizon nova)'
         required: false
         default: 'keystone horizon'
         type: string
@@ -24,16 +18,11 @@ on:
         default: 'ubuntu'
         type: choice
         options:
-          - ubuntu     # Ubuntu Noble 24.04 - Best tested
-          - rocky      # Rocky Linux 9 - Enterprise choice
-          - debian     # Debian Bullseye - Lightweight option
+          - ubuntu
+          - rocky
+          - debian
       push_images:
         description: 'Push images to registry'
-        required: false
-        default: true
-        type: boolean
-      enable_all_horizon_plugins:
-        description: 'Enable all Horizon UI plugins'
         required: false
         default: true
         type: boolean
@@ -57,255 +46,25 @@ jobs:
 
       - name: Install Kolla
         run: |
-          echo "=== Installing Kolla ==="
           python3 -m pip install --upgrade pip
           python3 -m pip install kolla docker
-          
-          # 验证安装
-          kolla-build --version
-          kolla-build --help
 
-      - name: Setup Kolla configuration
+      - name: Simple build
         run: |
-          echo "=== Setting up Kolla configuration ==="
+          echo "Building: ${{ inputs.build_target || 'keystone horizon' }}"
+          echo "Base: ${{ inputs.base_distro || 'ubuntu' }}"
           
-          # 创建配置目录
-          sudo mkdir -p /etc/kolla
-          
-          # 创建基本配置文件
-          sudo tee /etc/kolla/kolla-build.conf << 'EOF'
-          [DEFAULT]
-          # 基本设置
-          base = ${{ inputs.base_distro || 'ubuntu' }}
-          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
-          push = false
-          retries = 3
-          
-          # 日志和调试
-          debug = true
-          logs_dir = /tmp/kolla-logs
-          
-          # 并发设置
-          threads = 2
-          
-          # 用户设置
-          [keystone-user]
-          uid = 42425
-          gid = 42425
-          
-          [horizon-user]
-          uid = 42420
-          gid = 42420
-          
-          [nova-user]
-          uid = 42436
-          gid = 42436
-          
-          [neutron-user]
-          uid = 42435
-          gid = 42435
-          
-          [glance-user]
-          uid = 42415
-          gid = 42415
-          EOF
-          
-          echo "=== Kolla configuration created ==="
-          cat /etc/kolla/kolla-build.conf
+          kolla-build \
+            --base ${{ inputs.base_distro || 'ubuntu' }} \
+            --namespace ${{ env.REGISTRY }}/${{ env.OWNER }} \
+            --retries 3 \
+            ${{ inputs.build_target || 'keystone horizon' }}
 
-      - name: Create Horizon template override
-        if: inputs.enable_all_horizon_plugins == true || inputs.enable_all_horizon_plugins == null
-        run: |
-          echo "=== Creating Horizon template override ==="
-          
-          cat > /tmp/horizon-plugins.j2 << 'EOF'
-          {% extends parent_template %}
-          
-          {% block horizon_footer %}
-          # Enable all Horizon plugins by default
-          ENV ENABLE_BLAZAR=yes \
-              ENABLE_CLOUDKITTY=yes \
-              ENABLE_DESIGNATE=yes \
-              ENABLE_FWAAS=yes \
-              ENABLE_HEAT=yes \
-              ENABLE_IRONIC=yes \
-              ENABLE_MAGNUM=yes \
-              ENABLE_MANILA=yes \
-              ENABLE_MASAKARI=yes \
-              ENABLE_MISTRAL=yes \
-              ENABLE_NEUTRON_VPNAAS=yes \
-              ENABLE_OCTAVIA=yes \
-              ENABLE_TACKER=yes \
-              ENABLE_TROVE=yes \
-              ENABLE_VENUS=yes \
-              ENABLE_WATCHER=yes \
-              ENABLE_ZUN=yes
-          
-          # Create setup script for plugins
-          RUN echo '#!/bin/bash' > /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_BLAZAR=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_CLOUDKITTY=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_DESIGNATE=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_FWAAS=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_HEAT=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_IRONIC=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_MAGNUM=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_MANILA=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_MASAKARI=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_MISTRAL=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_NEUTRON_VPNAAS=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_OCTAVIA=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_TACKER=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_TROVE=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_VENUS=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_WATCHER=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              echo 'export ENABLE_ZUN=yes' >> /usr/local/bin/kolla_horizon_enable_all && \
-              chmod +x /usr/local/bin/kolla_horizon_enable_all
-          {% endblock %}
-          EOF
-          
-          echo "=== Horizon template override created ==="
-
-      - name: Validate build targets against support matrix
-        run: |
-          echo "=== Validating build targets against Kolla support matrix ==="
-          
-          # 定义经过测试的镜像 (T - Tested)
-          declare -A TESTED_IMAGES
-          TESTED_IMAGES[ubuntu]="barbican cinder cron dnsmasq etcd fluentd glance haproxy heat horizon keystone kolla-toolbox kuryr mariadb masakari memcached neutron nova placement rabbitmq swift tacker zun"
-          TESTED_IMAGES[rocky]="aodh barbican bifrost cinder cron dnsmasq etcd fluentd glance haproxy heat horizon ironic iscsid keepalived keystone kolla-toolbox kuryr masakari memcached mistral neutron nova octavia opensearch openvswitch placement prometheus rabbitmq swift tacker zun"
-          TESTED_IMAGES[debian]="cron fluentd glance heat horizon keystone kolla-toolbox mariadb neutron nova nova-spicehtml5proxy openvswitch placement rabbitmq tgtd"
-          
-          # 定义不可构建的镜像 (N - Not Available)
-          declare -A NOT_AVAILABLE
-          NOT_AVAILABLE[ubuntu]="hacluster-pcs nova-spicehtml5proxy ovsdpdk tgtd"
-          NOT_AVAILABLE[rocky]="hacluster-pcs nova-spicehtml5proxy ovsdpdk tgtd"
-          NOT_AVAILABLE[debian]="hacluster-pcs ovsdpdk"
-          
-          BUILD_TARGETS="${{ inputs.build_target || 'keystone horizon' }}"
-          BASE_DISTRO="${{ inputs.base_distro || 'ubuntu' }}"
-          
-          echo "Build targets: $BUILD_TARGETS"
-          echo "Base distro: $BASE_DISTRO"
-          echo ""
-          
-          # 检查每个构建目标
-          for target in $BUILD_TARGETS; do
-            # 移除正则表达式符号进行检查
-            clean_target=$(echo "$target" | sed 's/[\^$]//g' | sed 's/-.*$//')
-          
-            echo "Checking: $clean_target"
-          
-            # 检查是否在测试列表中
-            if [[ " ${TESTED_IMAGES[$BASE_DISTRO]} " =~ " $clean_target " ]]; then
-              echo "  ✅ TESTED - $clean_target is fully tested on $BASE_DISTRO"
-            elif [[ " ${NOT_AVAILABLE[$BASE_DISTRO]} " =~ " $clean_target " ]]; then
-              echo "  ❌ NOT AVAILABLE - $clean_target cannot be built on $BASE_DISTRO"
-              echo "  Consider using a different base distro or removing this target"
-            else
-              echo "  ⚠️  UNTESTED - $clean_target may work but is not regularly tested on $BASE_DISTRO"
-              echo "  Build may succeed but functionality is not guaranteed"
-            fi
-          done
-          
-          echo ""
-          echo "=== Support Matrix Summary for $BASE_DISTRO ==="
-          echo "Fully tested images: ${TESTED_IMAGES[$BASE_DISTRO]}"
-          echo ""
-          echo "📖 For complete support matrix see: https://docs.openstack.org/kolla/latest/support_matrix.html"
-
-      - name: Build OpenStack images
-        run: |
-          echo "=== Building OpenStack images ==="
-          
-          # 创建日志目录
-          sudo mkdir -p /tmp/kolla-logs
-          
-          # 设置构建参数
-          BUILD_ARGS="--config-file /etc/kolla/kolla-build.conf"
-          BUILD_ARGS="$BUILD_ARGS --base ${{ inputs.base_distro || 'ubuntu' }}"
-          BUILD_ARGS="$BUILD_ARGS --namespace ${{ env.REGISTRY }}/${{ env.OWNER }}"
-          BUILD_ARGS="$BUILD_ARGS --retries 3"
-          
-          # 根据基础发行版设置标签
-          case "${{ inputs.base_distro || 'ubuntu' }}" in
-            "ubuntu")
-              BUILD_ARGS="$BUILD_ARGS --base-tag 24.04"  # Ubuntu Noble
-              ;;
-            "rocky")
-              BUILD_ARGS="$BUILD_ARGS --base-tag 9"      # Rocky Linux 9
-              ;;
-            "debian")
-              BUILD_ARGS="$BUILD_ARGS --base-tag bullseye" # Debian Bullseye
-              ;;
-          esac
-          
-          # 如果启用 Horizon 插件，添加模板覆盖
-          if [[ "${{ inputs.enable_all_horizon_plugins }}" == "true" || "${{ inputs.enable_all_horizon_plugins }}" == "" ]]; then
-            BUILD_ARGS="$BUILD_ARGS --template-override /tmp/horizon-plugins.j2"
-            echo "Building with Horizon plugins enabled"
-          fi
-          
-          # 设置构建目标
-          BUILD_TARGETS="${{ inputs.build_target || 'keystone horizon' }}"
-          echo "Building targets: $BUILD_TARGETS"
-          
-          # 执行构建
-          echo "Running: kolla-build $BUILD_ARGS $BUILD_TARGETS"
-          kolla-build $BUILD_ARGS $BUILD_TARGETS || {
-            echo "=== Build failed, checking logs ==="
-            find /tmp/kolla-logs -name "*.log" -exec echo "=== {} ===" \; -exec tail -20 {} \; 2>/dev/null || echo "No logs found"
-            exit 1
-          }
-          
-          echo "=== Build completed successfully ==="
-          
-          # 显示构建的镜像
-          echo "=== Built images ==="
-          docker images | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" || echo "No images found with expected namespace"
-          docker images | grep -E "(keystone|horizon|nova|neutron|glance)" || echo "No OpenStack images found"
-
-      - name: Test built images
+      - name: List built images
         if: success()
         run: |
-          echo "=== Testing built images ==="
-          
-          # 测试函数
-          test_image() {
-            local image_pattern="$1"
-            local test_cmd="$2"
-          
-            echo "Testing images matching: $image_pattern"
-          
-            # 查找镜像
-            local images=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "$image_pattern" | head -3)
-          
-            if [ -z "$images" ]; then
-              echo "  No images found matching $image_pattern"
-              return
-            fi
-          
-            # 测试每个镜像
-            echo "$images" | while read image; do
-              if [ -n "$image" ] && [[ "$image" != *"<none>"* ]]; then
-                echo "  Testing: $image"
-                if [ -n "$test_cmd" ]; then
-                  docker run --rm "$image" $test_cmd || echo "    Test failed for $image"
-                else
-                  docker run --rm "$image" echo "Container starts successfully" || echo "    Startup failed for $image"
-                fi
-              fi
-            done
-          }
-          
-          # 测试各种服务
-          test_image "keystone" "keystone-manage --version"
-          test_image "horizon" "python3 -c 'import openstack_dashboard; print(\"Horizon OK\")'"
-          test_image "nova" "nova-manage --version"
-          test_image "neutron" "neutron-db-manage --help"
-          test_image "glance" "glance-manage --version"
-          
-          echo "=== Image testing completed ==="
+          echo "Built images:"
+          docker images | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" || echo "No images found"
 
       - name: Login to Container Registry
         if: success() && (github.event_name == 'push' || inputs.push_images == true)
@@ -315,83 +74,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push images to registry
+      - name: Push images
         if: success() && (github.event_name == 'push' || inputs.push_images == true)
         run: |
-          echo "=== Pushing images to registry ==="
-          
-          # 获取要推送的镜像
-          IMAGES_TO_PUSH=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" | grep -v '<none>')
-          
-          if [ -z "$IMAGES_TO_PUSH" ]; then
-            echo "No images to push"
-            exit 0
-          fi
-          
-          echo "Images to push:"
-          echo "$IMAGES_TO_PUSH"
-          
-          # 推送镜像
-          pushed_count=0
-          failed_count=0
-          
-          echo "$IMAGES_TO_PUSH" | while read image; do
-            if [ -n "$image" ]; then
+          echo "Pushing images..."
+          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}"); do
+            if [[ "$image" != *"<none>"* ]]; then
               echo "Pushing: $image"
-              if docker push "$image"; then
-                echo "✅ Successfully pushed: $image"
-                ((pushed_count++))
-              else
-                echo "❌ Failed to push: $image"
-                ((failed_count++))
-              fi
+              docker push "$image"
             fi
           done
-          
-          echo "=== Push completed ==="
-
-      - name: Generate build summary
-        if: always()
-        run: |
-          echo "## Kolla Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
-          echo "- **Build targets:** ${{ inputs.build_target || 'keystone horizon' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Base distro:** ${{ inputs.base_distro || 'ubuntu' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Registry:** ${{ env.REGISTRY }}/${{ env.OWNER }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Horizon plugins:** ${{ inputs.enable_all_horizon_plugins && 'Enabled' || 'Default' }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "### Built Images" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | Tag | Size |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|-----|------|" >> $GITHUB_STEP_SUMMARY
-          
-          # 列出构建的镜像
-          image_count=0
-          docker images --format "{{.Repository}} {{.Tag}} {{.Size}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" | while read repo tag size; do
-            echo "| $repo | $tag | $size |" >> $GITHUB_STEP_SUMMARY
-            ((image_count++))
-          done
-          
-          if [ $image_count -eq 0 ]; then
-            echo "| No images built | - | - |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Usage" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# Pull and run an image" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.OWNER }}/keystone:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker run -d ${{ env.REGISTRY }}/${{ env.OWNER }}/keystone:latest" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload build logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kolla-build-logs-${{ inputs.base_distro || 'ubuntu' }}
-          path: |
-            /tmp/kolla-logs/
-            /var/log/kolla/
-          retention-days: 7
