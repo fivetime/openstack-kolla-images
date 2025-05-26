@@ -21,6 +21,15 @@ on:
           - ubuntu
           - rocky
           - debian
+      release:
+        description: 'OpenStack release version'
+        required: false
+        default: '2025.1'
+        type: choice
+        options:
+          - '2024.2'
+          - '2025.1'
+          - 'master'
       push_images:
         description: 'Push images to registry'
         required: false
@@ -56,10 +65,12 @@ jobs:
         run: |
           echo "Building: ${{ inputs.build_target || 'keystone horizon' }}"
           echo "Base: ${{ inputs.base_distro || 'ubuntu' }}"
+          echo "OpenStack Release: ${{ inputs.release || '2025.1' }}"
           
           kolla-build \
             --base ${{ inputs.base_distro || 'ubuntu' }} \
             --namespace ${{ env.REGISTRY }}/${{ env.OWNER }} \
+            --tag ${{ inputs.release || '2025.1' }} \
             --retries 3 \
             ${{ inputs.build_target || 'keystone horizon' }}
 
@@ -75,15 +86,23 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.CR_PAT }}
 
       - name: Push images
         if: success() && (github.event_name == 'push' || inputs.push_images == true)
         run: |
           echo "Pushing images..."
-          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}"); do
-            if [[ "$image" != *"<none>"* ]]; then
+          
+          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.OWNER }}" | grep -v "<none>"); do
+            if [[ "$image" == *"${{ env.REGISTRY }}/${{ env.OWNER }}"* ]]; then
+              echo "Image already has correct registry prefix: $image"
               echo "Pushing: $image"
               docker push "$image"
+            else
+              new_tag="${{ env.REGISTRY }}/$image"
+              echo "Retagging $image -> $new_tag"
+              docker tag "$image" "$new_tag"
+              echo "Pushing: $new_tag"
+              docker push "$new_tag"
             fi
           done
