@@ -1,4 +1,4 @@
-name: Build Nexus Images
+name: Build Nexus Proxy
 
 on:
   push:
