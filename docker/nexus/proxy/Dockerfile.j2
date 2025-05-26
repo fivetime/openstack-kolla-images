@@ -1,0 +1,79 @@
+FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
+
+{% block labels %}
+    LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}"
+{% endblock %}
+
+{% block nexus_proxy_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{{ macros.configure_user(name='nexus') }}
+
+{% if base_package_type == 'rpm' %}
+    {% set nexus_proxy_packages = [
+        'nginx',
+        'openssl',
+        'jq',
+        'curl',
+        'bind-utils',
+        'iproute',
+        'procps-ng'
+    ] %}
+{% elif base_package_type == 'deb' %}
+    {% set nexus_proxy_packages = [
+        'nginx-light',
+        'openssl',
+        'jq',
+        'curl',
+        'dnsutils',
+        'iproute2',
+        'procps'
+    ] %}
+{% endif %}
+
+{{ macros.install_packages(nexus_proxy_packages | customizable("packages")) }}
+
+{% block nexus_proxy_kubectl_install %}
+    # Install kubectl for service discovery
+    RUN set -x \
+    && KUBECTL_VERSION="{{ kubectl_version | default('v1.28.0') }}" \
+    && curl -L -o /usr/local/bin/kubectl \
+    "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    && chmod +x /usr/local/bin/kubectl \
+    && kubectl version --client
+{% endblock %}
+
+{% set nexus_proxy_pip_packages = [
+    'python-openstackclient',
+    'python-keystoneclient'
+] %}
+
+{% block nexus_proxy_pip_install %}
+    RUN {{ macros.install_pip(nexus_proxy_pip_packages | customizable("pip_packages")) }}
+{% endblock %}
+
+{% block nexus_proxy_setup %}
+    # Create nexus directories with proper ownership from start
+    RUN mkdir -p /var/log/nexus /etc/nexus /var/lib/nexus /var/run/nexus \
+    && chown -R nexus:nexus /var/log/nexus /etc/nexus /var/lib/nexus /var/run/nexus
+
+    # Configure nginx to run as nexus user on non-privileged ports
+    RUN if [ -f /etc/nginx/nginx.conf ]; then \
+    sed -i 's/^user .*/user nexus;/' /etc/nginx/nginx.conf \
+    && sed -i 's/listen.*80;/listen 8080;/' /etc/nginx/nginx.conf \
+    && sed -i 's/listen.*443/listen 8443/' /etc/nginx/nginx.conf; \
+    fi \
+    && mkdir -p /var/log/nginx /var/lib/nginx /var/cache/nginx \
+    && chown -R nexus:nexus /var/log/nginx /var/lib/nginx /var/cache/nginx
+{% endblock %}
+
+{{ macros.kolla_patch_sources() }}
+
+COPY extend_start.sh /usr/local/bin/kolla_extend_start
+RUN chmod 755 /usr/local/bin/kolla_extend_start
+
+{% block nexus_proxy_footer %}{% endblock %}
+{% block footer %}{% endblock %}
+
+USER nexus
