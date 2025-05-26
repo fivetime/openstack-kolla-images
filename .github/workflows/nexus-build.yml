@@ -1,60 +1,120 @@
-name: Build Nexus Images
+name: 构建 Nexus 容器镜像
 
 on:
-  workflow_dispatch:  # 手动触发
-    inputs:
-      push_images:
-        description: 'Push images to registry'
-        required: false
-        default: true
-        type: boolean
-      kubectl_version:
-        description: 'kubectl version'
-        required: false
-        default: 'v1.33.0'
-        type: string
   push:
     branches: [ main, master ]
     paths:
-      - 'kolla/docker/nexus-**'
-      - '.github/workflows/nexus-build.yml'
+      - 'docker/nexus/**'
+      - '.github/workflows/build-nexus.yml'
   pull_request:
     branches: [ main, master ]
     paths:
-      - 'kolla/docker/nexus-**'
-      - '.github/workflows/nexus-build.yml'
+      - 'docker/nexus/**'
+      - '.github/workflows/build-nexus.yml'
+  workflow_dispatch:
+    inputs:
+      kubectl_version:
+        description: 'kubectl 版本'
+        required: false
+        default: 'v1.28.0'
+        type: string
+      force_rebuild:
+        description: '强制重新构建所有镜像'
+        required: false
+        default: false
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
-  OWNER: ${{ github.repository_owner }}
+  OWNER: fivetime
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     strategy:
-      fail-fast: false
       matrix:
-        service: [
-          "nexus"
-        ]
-        base_distro: [
-          "ubuntu"
-        ]
-        base_tag: [
-          "jammy"
-        ]
+        base_distro: [ubuntu]
+        base_tag: [jammy]
+        service: [nexus]
+      fail-fast: false
 
     steps:
-      - name: Checkout code
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 安装 Kolla 和依赖项
+        run: |
+          echo "=== 安装 Kolla 和依赖项 ==="
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install kolla docker
+          
+          # 验证安装
+          kolla-build --version
+          which kolla-build
+
+      - name: 设置工作目录
+        run: |
+          echo "=== 设置工作目录 ==="
+          pwd
+          ls -la
+          
+          # 检查 docker 目录是否存在
+          if [ ! -d "docker" ]; then
+            echo "错误：docker 目录不存在！"
+            echo "当前目录内容："
+            ls -la
+            exit 1
+          fi
+          
+          echo "=== Docker 目录结构 ==="
+          find docker -type f -name "*.j2" | head -20
+
+      - name: 设置 Kolla 配置
+        run: |
+          echo "=== 设置 Kolla 配置 ==="
+          sudo mkdir -p /etc/kolla
+          
+          # 生成 kolla-build.conf
+          cat << EOF | sudo tee /etc/kolla/kolla-build.conf
+          [DEFAULT]
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          push = true
+          tag = latest
+          base = ${{ matrix.base_distro }}
+          base_tag = ${{ matrix.base_tag }}
+          registry = ${{ env.REGISTRY }}
+          skip_existing = false
+          pull = true
+          squash = false
+          
+          [nexus-user]
+          uid = 42424
+          gid = 42424
+          EOF
+          
+          echo "=== Kolla 配置 ==="
+          sudo cat /etc/kolla/kolla-build.conf
+
+      - name: 列出可用的 Nexus 镜像
+        run: |
+          echo "=== 可用的 Nexus 模板 ==="
+          kolla-build --list-images | grep -E "nexus" || echo "检查 nexus 模板结构..."
+          
+          echo "=== 模板目录结构 ==="
+          find docker/nexus -type d | head -10
+          
+          echo "=== 模板文件 ==="
+          find docker/nexus -name "Dockerfile.j2" | head -10
+
+      - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: 登录到容器注册表
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
@@ -62,88 +122,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install system dependencies
+      - name: 构建 Nexus 镜像
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip python3-dev build-essential libffi-dev
-
-      - name: Install Kolla and Docker
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install kolla
-          python3 -m pip install docker
-
-      - name: Create kolla-build.conf for Nexus
-        run: |
-          sudo mkdir -p /etc/kolla
-          
-          cat << EOF | sudo tee /etc/kolla/kolla-build.conf
-          [DEFAULT]
-          namespace = ${{ env.OWNER }}
-          push = ${{ github.event_name != 'pull_request' && (inputs.push_images || 'true') }}
-          tag = latest
-          base = ${{ matrix.base_distro }}
-          base_tag = ${{ matrix.base_tag }}
-          registry = ${{ env.REGISTRY }}
-          build_args = {"org.opencontainers.image.source":"https://github.com/${{ github.repository }}"}
-          skip_existing = false
-          pull = true
-          squash = false
-          
-          EOF
-          
-          sudo cp /tmp/kolla-build.conf /etc/kolla/kolla-build.conf
-          
-          echo "=== Kolla configuration ==="
-          sudo cat /etc/kolla/kolla-build.conf
-          EOF
-          
-          echo "=== Kolla Build Configuration ==="
-          cat /etc/kolla/kolla-build.conf
-
-      - name: List available Nexus images
-        run: |
-          echo "=== Available Nexus Templates ==="
-          kolla-build --list-images | grep -E "nexus" || echo "Checking nexus template structure..."
-          
-          echo "=== Template Directory Structure ==="
-          find docker/nexus -type d | head -10
-          
-          echo "=== Template Files ==="
-          find docker/nexus -name "Dockerfile.j2" | head -10
-
-      - name: Build Nexus images
-        run: |
-          echo "=== Building Nexus images ==="
-          echo "Service: ${{ matrix.service }}"
-          echo "Base: ${{ matrix.base_distro }}:${{ matrix.base_tag }}"
-          echo "Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}"
-          echo "Working directory: $(pwd)"
+          echo "=== 构建 Nexus 镜像 ==="
+          echo "服务: ${{ matrix.service }}"
+          echo "基础: ${{ matrix.base_distro }}:${{ matrix.base_tag }}"
+          echo "注册表: ${{ env.REGISTRY }}/${{ env.OWNER }}"
+          echo "工作目录: $(pwd)"
           
           # 确保 kolla-build 可用
-          echo "=== Verifying kolla-build ==="
+          echo "=== 验证 kolla-build ==="
           which kolla-build
           kolla-build --version
           
           # 检查可用的镜像模板
-          echo "=== Available templates ==="
-          kolla-build --list-images | grep -E "(base|nexus)" || echo "No nexus templates found yet"
+          echo "=== 可用模板 ==="
+          kolla-build --list-images | grep -E "(base|nexus)" || echo "尚未找到 nexus 模板"
           
           # 构建 nexus 相关的所有镜像（包括 proxy 和 dns 子镜像）
-          echo "=== Starting build ==="
+          echo "=== 开始构建 ==="
           kolla-build \
             --config-file /etc/kolla/kolla-build.conf \
             --debug \
             ${{ matrix.service }}
 
-      - name: Test built images
+      - name: 测试构建的镜像
         if: success()
         run: |
-          echo "=== Testing Nexus images ==="
+          echo "=== 测试 Nexus 镜像 ==="
           
           # 检查构建的镜像
-          echo "=== Available images ==="
-          docker images | grep -E "(nexus|${{ env.OWNER }})" || echo "No nexus images found"
+          echo "=== 可用镜像 ==="
+          docker images | grep -E "(nexus|${{ env.OWNER }})" || echo "未找到 nexus 镜像"
           
           # 获取实际的镜像标签
           REGISTRY_PREFIX="${{ env.REGISTRY }}/${{ env.OWNER }}"
@@ -151,29 +161,29 @@ jobs:
           # 测试 nexus 基础镜像
           BASE_IMAGE="${REGISTRY_PREFIX}/nexus:latest"
           if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "nexus:latest"; then
-            echo "Testing nexus base image..."
-            docker run --rm $BASE_IMAGE kubectl version --client || echo "kubectl test failed"
-            docker run --rm $BASE_IMAGE jq --version || echo "jq test failed"
-            docker run --rm $BASE_IMAGE openstack --version || echo "openstack test failed"
+            echo "测试 nexus 基础镜像..."
+            docker run --rm $BASE_IMAGE kubectl version --client || echo "kubectl 测试失败"
+            docker run --rm $BASE_IMAGE jq --version || echo "jq 测试失败"
+            docker run --rm $BASE_IMAGE openstack --version || echo "openstack 测试失败"
           fi
           
           # 测试 nexus-proxy 镜像
           PROXY_IMAGE="${REGISTRY_PREFIX}/nexus-proxy:latest"
           if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "nexus-proxy:latest"; then
-            echo "Testing nexus-proxy image..."
-            docker run --rm $PROXY_IMAGE nginx -v || echo "nginx test failed"
-            docker run --rm $PROXY_IMAGE kubectl version --client || echo "kubectl test failed"
+            echo "测试 nexus-proxy 镜像..."
+            docker run --rm $PROXY_IMAGE nginx -v || echo "nginx 测试失败"
+            docker run --rm $PROXY_IMAGE kubectl version --client || echo "kubectl 测试失败"
           fi
           
           # 测试 nexus-dns 镜像
           DNS_IMAGE="${REGISTRY_PREFIX}/nexus-dns:latest"  
           if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "nexus-dns:latest"; then
-            echo "Testing nexus-dns image..."
-            docker run --rm $DNS_IMAGE dnsmasq --version || echo "dnsmasq test failed"
-            docker run --rm $DNS_IMAGE kubectl version --client || echo "kubectl test failed"
+            echo "测试 nexus-dns 镜像..."
+            docker run --rm $DNS_IMAGE dnsmasq --version || echo "dnsmasq 测试失败"
+            docker run --rm $DNS_IMAGE kubectl version --client || echo "kubectl 测试失败"
           fi
 
-      - name: Generate images metadata
+      - name: 生成镜像元数据
         if: success()
         id: meta
         uses: docker/metadata-action@v5
@@ -188,80 +198,40 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
 
-      - name: Show build results
+      - name: 推送镜像到注册表
+        if: success() && github.event_name != 'pull_request'
+        run: |
+          echo "=== 推送镜像到注册表 ==="
+          
+          # 推送所有构建的镜像
+          REGISTRY_PREFIX="${{ env.REGISTRY }}/${{ env.OWNER }}"
+          
+          # 推送 nexus 基础镜像
+          if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "nexus:latest"; then
+            echo "推送 nexus 基础镜像..."
+            docker push $REGISTRY_PREFIX/nexus:latest
+          fi
+          
+          # 推送 nexus-proxy 镜像
+          if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "nexus-proxy:latest"; then
+            echo "推送 nexus-proxy 镜像..."
+            docker push $REGISTRY_PREFIX/nexus-proxy:latest
+          fi
+          
+          # 推送 nexus-dns 镜像
+          if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "nexus-dns:latest"; then
+            echo "推送 nexus-dns 镜像..."
+            docker push $REGISTRY_PREFIX/nexus-dns:latest
+          fi
+
+      - name: 构建摘要
         if: always()
         run: |
-          echo "=== Build Summary ==="
-          echo "Service: ${{ matrix.service }}"
-          echo "Status: ${{ job.status }}"
-          echo "Base Image: ${{ matrix.base_distro }}:${{ matrix.base_tag }}"
-          echo "Target Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}"
-          echo "Push Enabled: ${{ github.event_name != 'pull_request' && (inputs.push_images || 'true') }}"
+          echo "=== 构建摘要 ==="
+          echo "✅ 服务: ${{ matrix.service }}"
+          echo "✅ 基础镜像: ${{ matrix.base_distro }}:${{ matrix.base_tag }}"
+          echo "✅ 注册表: ${{ env.REGISTRY }}/${{ env.OWNER }}"
+          echo "✅ 推送: ${{ github.event_name != 'pull_request' }}"
           
-          echo "=== Local Images ==="
-          docker images | grep nexus || echo "No nexus images found locally"
-          
-          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
-            echo "=== Registry Images (if pushed) ==="
-            echo "Image should be available at:"
-            echo "  ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.service }}:latest"
-            echo "  ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.service }}:$(date +%Y%m%d)-$(echo ${{ github.sha }} | cut -c1-7)"
-          fi
-
-  # 构建完成后的整合测试
-  integration-test:
-    needs: build
-    runs-on: ubuntu-latest
-    if: success()
-    steps:
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull and test images
-        if: github.event_name != 'pull_request'
-        run: |
-          echo "=== Integration Testing ==="
-          
-          # 拉取镜像
-          docker pull ${{ env.REGISTRY }}/${{ env.OWNER }}/nexus-proxy:latest || echo "nexus-proxy pull failed"
-          docker pull ${{ env.REGISTRY }}/${{ env.OWNER }}/nexus-dns:latest || echo "nexus-dns pull failed"
-          
-          # 显示镜像信息
-          echo "=== Image Information ==="
-          docker images | grep nexus
-          
-          # 基础连通性测试
-          echo "=== Basic Connectivity Test ==="
-          docker run --rm ${{ env.REGISTRY }}/${{ env.OWNER }}/nexus-proxy:latest echo "nexus-proxy is ready" || echo "nexus-proxy connection failed"
-          docker run --rm ${{ env.REGISTRY }}/${{ env.OWNER }}/nexus-dns:latest echo "nexus-dns is ready" || echo "nexus-dns connection failed"
-          
-          echo "=== Integration Test Completed ==="
-
-  # 清理和通知
-  cleanup:
-    needs: [build, integration-test]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Cleanup and Summary
-        run: |
-          echo "=== Build Summary ==="
-          echo "Build Status: ${{ needs.build.result }}"
-          echo "Integration Test Status: ${{ needs.integration-test.result }}"
-          echo "Trigger: ${{ github.event_name }}"
-          echo "Repository: ${{ github.repository }}"
-          echo "Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}"
-          
-          if [[ "${{ needs.build.result }}" == "success" ]]; then
-            echo "✅ Nexus images built successfully!"
-            echo "📦 Available images:"
-            echo "   - nexus-proxy:latest"
-            echo "   - nexus-dns:latest"
-          else
-            echo "❌ Build failed. Check the logs above."
-          fi
+          echo "=== 最终镜像列表 ==="
+          docker images | grep -E "(nexus|${{ env.OWNER }})" || echo "未找到 nexus 镜像"
