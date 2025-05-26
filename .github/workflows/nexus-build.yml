@@ -1,0 +1,190 @@
+name: Build Nexus Images with Kolla
+
+on:
+  workflow_dispatch:
+    inputs:
+      push_images:
+        description: 'Push images to registry'
+        required: false
+        default: true
+        type: boolean
+      base_distro:
+        description: 'Base distribution'
+        required: false
+        default: 'ubuntu'
+        type: choice
+        options:
+          - ubuntu
+          - debian
+          - rocky
+      kubectl_version:
+        description: 'kubectl version'
+        required: false
+        default: 'v1.33.0'
+        type: string
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'docker/nexus-**'
+      - '.github/workflows/nexus-build.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'docker/nexus-**'
+      - '.github/workflows/nexus-build.yml'
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [
+          "nexus-proxy",
+          "nexus-dns"
+        ]
+        openstack_release: [
+          "2025.1"
+        ]
+        base_distro:
+          - ${{ inputs.base_distro || 'ubuntu' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Kolla
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install kolla docker
+
+      - name: Setup Kolla environment
+        run: |
+          # 创建 Kolla 用户配置
+          sudo mkdir -p /etc/kolla
+          
+          cat << EOF | sudo tee /etc/kolla/kolla-build.conf
+          [DEFAULT]
+          namespace = ${{ env.OWNER }}
+          push = ${{ github.event_name != 'pull_request' && (inputs.push_images != 'false') }}
+          tag = latest
+          base = ${{ matrix.base_distro }}
+          registry = ${{ env.REGISTRY }}
+          build_args = {"org.opencontainers.image.source":"https://github.com/${{ github.repository }}"}
+          skip_existing = false
+          pull = true
+          
+          # Nexus 用户配置
+          [nexus-user]
+          uid = 42424
+          gid = 42424
+          
+          # kubectl 版本配置
+          [nexus-proxy]
+          kubectl_version = ${{ inputs.kubectl_version || 'v1.33.0' }}
+          
+          [nexus-dns]
+          kubectl_version = ${{ inputs.kubectl_version || 'v1.33.0' }}
+          EOF
+
+      - name: Verify Kolla setup
+        run: |
+          echo "=== Kolla Build Configuration ==="
+          cat /etc/kolla/kolla-build.conf
+          
+          echo "=== Available Nexus Images ==="
+          kolla-build --list-images | grep -E "(nexus|base)" || echo "Checking template structure..."
+          
+          echo "=== Template Directory Structure ==="
+          find docker -name "nexus-*" -type d
+          find docker -name "Dockerfile.j2" -path "*/nexus-*"
+
+      - name: Build Nexus image
+        run: |
+          echo "=== Building ${{ matrix.service }} image ==="
+          echo "Service: ${{ matrix.service }}"
+          echo "Base: ${{ matrix.base_distro }}"
+          echo "Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}"
+          
+          # 构建镜像
+          kolla-build \
+            --config-file /etc/kolla/kolla-build.conf \
+            --debug \
+            ${{ matrix.service }}
+
+      - name: Test built image
+        if: success()
+        run: |
+          IMAGE_NAME="${{ env.OWNER }}/${{ matrix.service }}:latest"
+          echo "=== Testing image: $IMAGE_NAME ==="
+          
+          # 检查镜像是否存在
+          docker images | grep ${{ matrix.service }}
+          
+          # 基础功能测试
+          if [[ "${{ matrix.service }}" == "nexus-proxy" ]]; then
+            echo "Testing nexus-proxy tools..."
+            docker run --rm $IMAGE_NAME kubectl version --client
+            docker run --rm $IMAGE_NAME jq --version  
+            docker run --rm $IMAGE_NAME nginx -v
+            docker run --rm $IMAGE_NAME openstack --version || echo "OpenStack CLI test skipped"
+          elif [[ "${{ matrix.service }}" == "nexus-dns" ]]; then
+            echo "Testing nexus-dns tools..."
+            docker run --rm $IMAGE_NAME kubectl version --client
+            docker run --rm $IMAGE_NAME jq --version
+            docker run --rm $IMAGE_NAME dnsmasq --version
+            docker run --rm $IMAGE_NAME dig -v
+          fi
+
+      - name: Push to registry
+        if: success() && github.event_name != 'pull_request' && (inputs.push_images != 'false')
+        run: |
+          IMAGE_NAME="${{ env.OWNER }}/${{ matrix.service }}:latest"
+          REGISTRY_IMAGE="${{ env.REGISTRY }}/$IMAGE_NAME"
+          
+          echo "Tagging and pushing: $REGISTRY_IMAGE"
+          docker tag $IMAGE_NAME $REGISTRY_IMAGE
+          docker push $REGISTRY_IMAGE
+          
+          # Also tag with commit SHA
+          COMMIT_TAG="${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.service }}:$(echo ${{ github.sha }} | cut -c1-7)"
+          docker tag $IMAGE_NAME $COMMIT_TAG
+          docker push $COMMIT_TAG
+
+      - name: Show build results
+        if: always()
+        run: |
+          echo "=== Build Summary ==="
+          echo "Service: ${{ matrix.service }}"
+          echo "Status: ${{ job.status }}"
+          echo "Base Distribution: ${{ matrix.base_distro }}"
+          echo "Target Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}"
+          echo "Push Enabled: ${{ github.event_name != 'pull_request' && (inputs.push_images != 'false') }}"
+          
+          echo "=== Local Images ==="
+          docker images | grep nexus
+          
+          if [[ "${{ github.event_name }}" != "pull_request" && "${{ inputs.push_images }}" != "false" ]]; then
+            echo "=== Registry Images ==="
+            echo "Images available at:"
+            echo "  ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.service }}:latest"
+            echo "  ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.service }}:$(echo ${{ github.sha }} | cut -c1-7)"
+          fi
