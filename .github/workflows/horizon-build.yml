@@ -1,0 +1,387 @@
+name: Build Horizon Images
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'docker/horizon/**'
+      - '.github/workflows/horizon-build.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'docker/horizon/**'
+      - '.github/workflows/horizon-build.yml'
+  workflow_dispatch:
+    inputs:
+      push_images:
+        description: 'Push images to registry'
+        required: false
+        default: true
+        type: boolean
+      enable_all_plugins:
+        description: 'Enable all Horizon plugins by default'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: fivetime
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        base_distro: [ubuntu, centos]
+        include:
+          - base_distro: ubuntu
+            base_tag: noble
+          - base_distro: centos
+            base_tag: stream9
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Kolla and dependencies
+        run: |
+          echo "=== Installing Kolla and dependencies ==="
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install kolla docker
+          
+          # 验证安装
+          kolla-build --version
+          which kolla-build
+
+      - name: Setup Kolla configuration
+        run: |
+          echo "=== Setting up Kolla configuration ==="
+          sudo mkdir -p /etc/kolla
+          
+          # 生成 kolla-build.conf
+          cat > /tmp/kolla-build.conf << 'EOF'
+          [DEFAULT]
+          debug = true
+          log_dir = /var/log/kolla
+          push = false
+          base = ${{ matrix.base_distro }}
+          base_tag = ${{ matrix.base_tag }}
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          tag = latest
+          
+          # Horizon 用户配置
+          [horizon-user]
+          uid = 42420
+          gid = 42420
+          EOF
+          
+          sudo cp /tmp/kolla-build.conf /etc/kolla/kolla-build.conf
+          
+          echo "=== Kolla configuration ==="
+          sudo cat /etc/kolla/kolla-build.conf
+
+      - name: Create Horizon template override
+        if: inputs.enable_all_plugins == true || inputs.enable_all_plugins == null
+        run: |
+          echo "=== Creating Horizon template override to enable all plugins ==="
+          mkdir -p /tmp/kolla-overrides
+          
+          cat > /tmp/kolla-overrides/horizon-enable-all.j2 << 'EOF'
+          {% extends parent_template %}
+          
+          # Horizon - Enable all OpenStack UI plugins by default
+          {% block horizon_footer %}
+          # Set environment variables to enable all Horizon plugins
+          ENV ENABLE_BLAZAR=yes
+          ENV ENABLE_CLOUDKITTY=yes
+          ENV ENABLE_DESIGNATE=yes
+          ENV ENABLE_FWAAS=yes
+          ENV ENABLE_HEAT=yes
+          ENV ENABLE_IRONIC=yes
+          ENV ENABLE_MAGNUM=yes
+          ENV ENABLE_MANILA=yes
+          ENV ENABLE_MASAKARI=yes
+          ENV ENABLE_MISTRAL=yes
+          ENV ENABLE_NEUTRON_VPNAAS=yes
+          ENV ENABLE_OCTAVIA=yes
+          ENV ENABLE_TACKER=yes
+          ENV ENABLE_TROVE=yes
+          ENV ENABLE_VENUS=yes
+          ENV ENABLE_WATCHER=yes
+          ENV ENABLE_ZUN=yes
+          
+          # Create configuration directory
+          RUN mkdir -p /etc/openstack-dashboard/local_settings.d && \
+              chown -R horizon:horizon /etc/openstack-dashboard
+          
+          # Create a configuration file to enable all plugins
+          RUN cat > /etc/openstack-dashboard/local_settings.d/_99_enable_all_plugins.py << 'PLUGIN_EOF'
+          # Enable all Horizon plugins
+          import os
+          
+          # Blazar Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/blazar_dashboard'):
+              ENABLE_BLAZAR = getattr(os.environ, 'ENABLE_BLAZAR', 'yes').lower() == 'yes'
+          
+          # CloudKitty Dashboard  
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/cloudkittydashboard'):
+              ENABLE_CLOUDKITTY = getattr(os.environ, 'ENABLE_CLOUDKITTY', 'yes').lower() == 'yes'
+          
+          # Designate Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/designatedashboard'):
+              ENABLE_DESIGNATE = getattr(os.environ, 'ENABLE_DESIGNATE', 'yes').lower() == 'yes'
+          
+          # Neutron FWaaS Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/neutron_fwaas_dashboard'):
+              ENABLE_FWAAS = getattr(os.environ, 'ENABLE_FWAAS', 'yes').lower() == 'yes'
+          
+          # Heat Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/heat_dashboard'):
+              ENABLE_HEAT = getattr(os.environ, 'ENABLE_HEAT', 'yes').lower() == 'yes'
+          
+          # Ironic Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/ironic_ui'):
+              ENABLE_IRONIC = getattr(os.environ, 'ENABLE_IRONIC', 'yes').lower() == 'yes'
+          
+          # Magnum Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/magnum_ui'):
+              ENABLE_MAGNUM = getattr(os.environ, 'ENABLE_MAGNUM', 'yes').lower() == 'yes'
+          
+          # Manila Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/manila_ui'):
+              ENABLE_MANILA = getattr(os.environ, 'ENABLE_MANILA', 'yes').lower() == 'yes'
+          
+          # Masakari Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/masakaridashboard'):
+              ENABLE_MASAKARI = getattr(os.environ, 'ENABLE_MASAKARI', 'yes').lower() == 'yes'
+          
+          # Mistral Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/mistraldashboard'):
+              ENABLE_MISTRAL = getattr(os.environ, 'ENABLE_MISTRAL', 'yes').lower() == 'yes'
+          
+          # Neutron VPNaaS Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/neutron_vpnaas_dashboard'):
+              ENABLE_NEUTRON_VPNAAS = getattr(os.environ, 'ENABLE_NEUTRON_VPNAAS', 'yes').lower() == 'yes'
+          
+          # Octavia Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/octavia_dashboard'):
+              ENABLE_OCTAVIA = getattr(os.environ, 'ENABLE_OCTAVIA', 'yes').lower() == 'yes'
+          
+          # Tacker Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/tacker_horizon'):
+              ENABLE_TACKER = getattr(os.environ, 'ENABLE_TACKER', 'yes').lower() == 'yes'
+          
+          # Trove Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/trove_dashboard'):
+              ENABLE_TROVE = getattr(os.environ, 'ENABLE_TROVE', 'yes').lower() == 'yes'
+          
+          # Venus Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/venus_dashboard'):
+              ENABLE_VENUS = getattr(os.environ, 'ENABLE_VENUS', 'yes').lower() == 'yes'
+          
+          # Watcher Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/watcher_dashboard'):
+              ENABLE_WATCHER = getattr(os.environ, 'ENABLE_WATCHER', 'yes').lower() == 'yes'
+          
+          # Zun Dashboard
+          if os.path.exists('/var/lib/kolla/venv/lib/python3/site-packages/zun_ui'):
+              ENABLE_ZUN = getattr(os.environ, 'ENABLE_ZUN', 'yes').lower() == 'yes'
+          
+          PLUGIN_EOF
+          
+          {% endblock %}
+          EOF
+          
+          echo "=== Horizon template override created ==="
+          cat /tmp/kolla-overrides/horizon-enable-all.j2
+
+      - name: Build required base images
+        run: |
+          echo "=== Building required base images ==="
+          
+          # 构建 base 镜像
+          echo "Building base image..."
+          kolla-build \
+            --config-file /etc/kolla/kolla-build.conf \
+            --debug \
+            --retries 3 \
+            base || {
+            echo "Warning: base image build may have failed, continuing..."
+          }
+          
+          # 构建 openstack-base 镜像（horizon 的依赖）
+          echo "Building openstack-base image..."
+          kolla-build \
+            --config-file /etc/kolla/kolla-build.conf \
+            --debug \
+            --retries 3 \
+            openstack-base || {
+            echo "Warning: openstack-base image build may have failed, continuing..."
+          }
+          
+          echo "=== Base images build completed ==="
+          docker images | grep -E "(base|openstack-base)" || echo "No base images found"
+
+      - name: Build Horizon image
+        run: |
+          echo "=== Building Horizon image ==="
+          echo "Base: ${{ matrix.base_distro }}:${{ matrix.base_tag }}"
+          echo "Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}"
+          
+          BUILD_ARGS="--config-file /etc/kolla/kolla-build.conf --debug --retries 3"
+          
+          # 如果启用所有插件，添加模板覆盖
+          if [[ "${{ inputs.enable_all_plugins }}" == "true" || "${{ inputs.enable_all_plugins }}" == "" ]]; then
+            BUILD_ARGS="$BUILD_ARGS --template-override /tmp/kolla-overrides/horizon-enable-all.j2"
+            echo "=== Building Horizon with all plugins enabled ==="
+          else
+            echo "=== Building standard Horizon image ==="
+          fi
+          
+          # 构建 horizon 镜像
+          kolla-build $BUILD_ARGS ^horizon$ || {
+            echo "Horizon build failed!"
+            echo "=== Build logs ==="
+            tail -100 /var/log/kolla/* 2>/dev/null || echo "No build logs found"
+            exit 1
+          }
+          
+          echo "=== Horizon image built successfully ==="
+          docker images | grep horizon
+
+      - name: Test Horizon image
+        if: success()
+        run: |
+          echo "=== Testing Horizon image ==="
+          
+          # 查找 Horizon 镜像
+          HORIZON_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "horizon:latest$|horizon$" | head -1)
+          
+          if [ -n "$HORIZON_IMAGE" ]; then
+            echo "Found Horizon image: $HORIZON_IMAGE"
+          
+            echo "=== Testing basic functionality ==="
+            echo "Testing Python environment..."
+            docker run --rm $HORIZON_IMAGE python3 --version || echo "Python test failed"
+          
+            echo "Testing Django..."
+            docker run --rm $HORIZON_IMAGE python3 -c "import django; print('Django version:', django.VERSION)" || echo "Django test failed"
+          
+            echo "Testing Horizon..."
+            docker run --rm $HORIZON_IMAGE python3 -c "import openstack_dashboard; print('Horizon available')" || echo "Horizon test failed"
+          
+            echo "Testing user configuration..."
+            docker run --rm $HORIZON_IMAGE id horizon || echo "User test failed"
+          
+            echo "Testing directories..."
+            docker run --rm $HORIZON_IMAGE ls -la /etc/openstack-dashboard/ || echo "Configuration directory test failed"
+          
+            echo "=== Testing enabled plugins (if all plugins enabled) ==="
+            if [[ "${{ inputs.enable_all_plugins }}" == "true" || "${{ inputs.enable_all_plugins }}" == "" ]]; then
+              echo "Checking environment variables for enabled plugins..."
+              docker run --rm $HORIZON_IMAGE env | grep ENABLE_ || echo "No ENABLE_ environment variables found"
+          
+              echo "Checking plugin configuration file..."
+              docker run --rm $HORIZON_IMAGE ls -la /etc/openstack-dashboard/local_settings.d/ || echo "Plugin config directory not found"
+            fi
+          
+            echo "=== Horizon image test completed ==="
+          else
+            echo "No Horizon image found for testing"
+            exit 1
+          fi
+
+      - name: Login to Container Registry
+        if: success() && (github.event_name == 'push' || inputs.push_images == true)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Horizon image
+        if: success() && (github.event_name == 'push' || inputs.push_images == true)
+        run: |
+          echo "=== Pushing Horizon image ==="
+          
+          # 推送 Horizon 镜像
+          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}/.*horizon"); do
+            if [[ "$image" != *"<none>"* ]]; then
+              echo "Pushing $image"
+              docker push "$image" || {
+                echo "Failed to push $image"
+                continue
+              }
+              echo "Successfully pushed $image"
+            fi
+          done
+          
+          echo "=== Push completed ==="
+
+      - name: Generate build summary
+        if: always()
+        run: |
+          echo "## Horizon Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Status | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|------|" >> $GITHUB_STEP_SUMMARY
+          
+          # 检查是否有镜像构建成功
+          images_found=false
+          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep horizon | head -10); do
+            if [[ "$image" != *"<none>"* ]]; then
+              size=$(docker images --format "{{.Size}}" "$image")
+              echo "| $image | ✅ Built | $size |" >> $GITHUB_STEP_SUMMARY
+              images_found=true
+            fi
+          done
+          
+          if [ "$images_found" = false ]; then
+            echo "| No horizon images | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- Base OS: ${{ matrix.base_distro }}:${{ matrix.base_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- All plugins enabled: ${{ inputs.enable_all_plugins || 'true' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Enabled Horizon Plugins" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ inputs.enable_all_plugins }}" == "true" || "${{ inputs.enable_all_plugins }}" == "" ]]; then
+            echo "- ✅ Blazar Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ CloudKitty Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Designate Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Neutron FWaaS Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Heat Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Ironic Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Magnum Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Manila Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Masakari Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Mistral Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Neutron VPNaaS Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Octavia Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Tacker Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Trove Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Venus Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Watcher Dashboard" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Zun Dashboard" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Standard Horizon build (plugins disabled by default)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: horizon-build-logs-${{ matrix.base_distro }}-${{ matrix.base_tag }}
+          path: |
+            /var/log/kolla/
+            build.log
+          retention-days: 7
