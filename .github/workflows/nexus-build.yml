@@ -16,7 +16,7 @@ on:
       kubectl_version:
         description: 'kubectl version to install'
         required: false
-        default: 'v1.33.0'
+        default: 'v1.28.0'
       push_images:
         description: 'Push images to registry'
         required: false
@@ -34,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         base_distro: [ubuntu]
-        base_tag: [jammy]
+        base_tag: [noble]  # Ubuntu 24.04 LTS
 
     steps:
       - name: Checkout repository
@@ -95,7 +95,7 @@ jobs:
           
           # kubectl 版本配置
           [nexus]
-          kubectl_version = ${{ inputs.kubectl_version || 'v1.33.0' }}
+          kubectl_version = ${{ inputs.kubectl_version || 'v1.28.0' }}
           EOF
           
           sudo cp /tmp/kolla-build.conf /etc/kolla/kolla-build.conf
@@ -342,7 +342,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
           echo "- Base OS: ${{ matrix.base_distro }}:${{ matrix.base_tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- kubectl version: ${{ inputs.kubectl_version || 'v1.33.0' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- kubectl version: ${{ inputs.kubectl_version || 'v1.28.0' }}" >> $GITHUB_STEP_SUMMARY
           echo "- Registry: ${{ env.REGISTRY }}/${{ env.OWNER }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload build logs
