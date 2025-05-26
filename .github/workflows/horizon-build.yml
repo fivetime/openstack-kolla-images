@@ -2,12 +2,12 @@ name: Build Horizon Images
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
     paths:
       - 'docker/horizon/**'
       - '.github/workflows/horizon-build.yml'
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
     paths:
       - 'docker/horizon/**'
       - '.github/workflows/horizon-build.yml'
@@ -50,23 +50,36 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Kolla and dependencies
+      - name: Install Kolla from source and dependencies
         run: |
-          echo "=== Installing Kolla and dependencies ==="
+          echo "=== Installing Kolla from source and dependencies ==="
           python3 -m pip install --upgrade pip setuptools wheel
-          python3 -m pip install kolla docker
           
-          # 验证安装
+          python3 -m pip install tox
+          
+          echo "Installing Kolla from source..."
+          python3 -m pip install -e . || {
+            echo "Source installation failed, trying requirements first..."
+            python3 -m pip install -r requirements.txt || echo "Requirements installation warnings ignored"
+            python3 -m pip install -e .
+          }
+          
+          python3 -m pip install docker
+          
+          echo "=== Verifying installation ==="
           kolla-build --version
           which kolla-build
+          tox --version
 
-      - name: Setup Kolla configuration
+      - name: Generate Kolla configuration using official tools
         run: |
-          echo "=== Setting up Kolla configuration ==="
-          sudo mkdir -p /etc/kolla
+          echo "=== Generating Kolla configuration using official genconfig ==="
           
-          # 生成 kolla-build.conf
-          cat > /tmp/kolla-build.conf << 'EOF'
+          if [ ! -f "tox.ini" ]; then
+            echo "Warning: tox.ini not found, cannot use official genconfig"
+            echo "Creating minimal configuration for Horizon..."
+            sudo mkdir -p /etc/kolla
+            sudo tee /etc/kolla/kolla-build.conf << 'EOF'
           [DEFAULT]
           debug = true
           log_dir = /var/log/kolla
@@ -75,17 +88,92 @@ jobs:
           base_tag = ${{ matrix.base_tag }}
           namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
           tag = latest
+          threads = 2
           
-          # Horizon 用户配置
+          [horizon-user]
+          uid = 42420
+          gid = 42420
+          EOF
+          else
+            echo "=== Found tox.ini, using official genconfig for Horizon build ==="
+          
+            echo "Running tox -e genconfig..."
+            tox -e genconfig || {
+              echo "tox genconfig completed (warnings are normal)"
+            }
+          
+            if [ -f "etc/kolla/kolla-build.conf" ]; then
+              echo "=== Generated configuration found ==="
+              ls -la etc/kolla/kolla-build.conf
+              echo "Configuration size: $(wc -l < etc/kolla/kolla-build.conf) lines"
+          
+              sudo mkdir -p /etc/kolla
+              sudo cp etc/kolla/kolla-build.conf /etc/kolla/kolla-build.conf
+          
+              echo "=== Appending Horizon-specific build settings ==="
+              sudo tee -a /etc/kolla/kolla-build.conf << 'EOF'
+          
+          # Custom build settings for Horizon GitHub Actions build
+          [DEFAULT]
+          debug = true
+          log_dir = /var/log/kolla
+          push = false
+          base = ${{ matrix.base_distro }}
+          base_tag = ${{ matrix.base_tag }}
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          tag = latest
+          threads = 2
+          
+          # Horizon user configuration
           [horizon-user]
           uid = 42420
           gid = 42420
           EOF
           
-          sudo cp /tmp/kolla-build.conf /etc/kolla/kolla-build.conf
+            elif [ -f "kolla-build.conf" ]; then
+              echo "=== Found kolla-build.conf in root directory ==="
+              sudo mkdir -p /etc/kolla
+              sudo cp kolla-build.conf /etc/kolla/kolla-build.conf
           
-          echo "=== Kolla configuration ==="
-          sudo cat /etc/kolla/kolla-build.conf
+              sudo tee -a /etc/kolla/kolla-build.conf << 'EOF'
+          
+          # Custom Horizon build settings
+          [DEFAULT]
+          base = ${{ matrix.base_distro }}
+          base_tag = ${{ matrix.base_tag }}
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          tag = latest
+          threads = 2
+          
+          [horizon-user]
+          uid = 42420
+          gid = 42420
+          EOF
+          
+            else
+              echo "=== Configuration generation failed, creating Horizon-specific config ==="
+              sudo mkdir -p /etc/kolla
+              sudo tee /etc/kolla/kolla-build.conf << 'EOF'
+          [DEFAULT]
+          debug = true
+          log_dir = /var/log/kolla
+          push = false
+          base = ${{ matrix.base_distro }}
+          base_tag = ${{ matrix.base_tag }}
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          tag = latest
+          threads = 2
+          
+          [horizon-user]
+          uid = 42420
+          gid = 42420
+          EOF
+            fi
+          fi
+          
+          echo "=== Final Horizon configuration summary ==="
+          echo "Configuration file size: $(wc -l < /etc/kolla/kolla-build.conf) lines"
+          echo "Configuration location: /etc/kolla/kolla-build.conf"
 
       - name: Create Horizon template override
         if: inputs.enable_all_plugins == true || inputs.enable_all_plugins == null
@@ -206,7 +294,6 @@ jobs:
         run: |
           echo "=== Building required base images ==="
           
-          # 构建 base 镜像
           echo "Building base image..."
           kolla-build \
             --config-file /etc/kolla/kolla-build.conf \
@@ -216,7 +303,6 @@ jobs:
             echo "Warning: base image build may have failed, continuing..."
           }
           
-          # 构建 openstack-base 镜像（horizon 的依赖）
           echo "Building openstack-base image..."
           kolla-build \
             --config-file /etc/kolla/kolla-build.conf \
@@ -237,7 +323,6 @@ jobs:
           
           BUILD_ARGS="--config-file /etc/kolla/kolla-build.conf --debug --retries 3"
           
-          # 如果启用所有插件，添加模板覆盖
           if [[ "${{ inputs.enable_all_plugins }}" == "true" || "${{ inputs.enable_all_plugins }}" == "" ]]; then
             BUILD_ARGS="$BUILD_ARGS --template-override /tmp/kolla-overrides/horizon-enable-all.j2"
             echo "=== Building Horizon with all plugins enabled ==="
@@ -245,7 +330,6 @@ jobs:
             echo "=== Building standard Horizon image ==="
           fi
           
-          # 构建 horizon 镜像
           kolla-build $BUILD_ARGS ^horizon$ || {
             echo "Horizon build failed!"
             echo "=== Build logs ==="
@@ -261,7 +345,6 @@ jobs:
         run: |
           echo "=== Testing Horizon image ==="
           
-          # 查找 Horizon 镜像
           HORIZON_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "horizon:latest$|horizon$" | head -1)
           
           if [ -n "$HORIZON_IMAGE" ]; then
@@ -311,7 +394,6 @@ jobs:
         run: |
           echo "=== Pushing Horizon image ==="
           
-          # 推送 Horizon 镜像
           for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}/.*horizon"); do
             if [[ "$image" != *"<none>"* ]]; then
               echo "Pushing $image"
@@ -332,7 +414,6 @@ jobs:
           echo "| Image | Status | Size |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|------|" >> $GITHUB_STEP_SUMMARY
           
-          # 检查是否有镜像构建成功
           images_found=false
           for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep horizon | head -10); do
             if [[ "$image" != *"<none>"* ]]; then

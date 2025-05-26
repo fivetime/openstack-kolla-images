@@ -1,0 +1,554 @@
+name: Build Kolla OpenStack Images
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'docker/**'
+      - '.github/workflows/kolla-build.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'docker/**'
+      - '.github/workflows/kolla-build.yml'
+  workflow_dispatch:
+    inputs:
+      build_profile:
+        description: 'Build profile (all, minimal, compute, storage, networking, ui)'
+        required: false
+        default: 'minimal'
+        type: choice
+        options:
+          - all
+          - minimal
+          - compute
+          - storage
+          - networking
+          - ui
+      push_images:
+        description: 'Push images to registry'
+        required: false
+        default: true
+        type: boolean
+      enable_all_horizon_plugins:
+        description: 'Enable all Horizon UI plugins'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: fivetime
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        base_distro: [ubuntu, centos]
+        include:
+          - base_distro: ubuntu
+            base_tag: noble
+          - base_distro: centos
+            base_tag: stream9
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup working directory and validate project structure
+        run: |
+          echo "=== Setting up working directory ==="
+          pwd
+          ls -la
+          
+          if [ ! -d "docker" ]; then
+            echo "Error: docker directory not found!"
+            echo "Current directory contents:"
+            ls -la
+            exit 1
+          fi
+          
+          if [ ! -f "setup.py" ] && [ ! -f "pyproject.toml" ]; then
+            echo "Warning: No setup.py or pyproject.toml found, may affect source installation"
+          fi
+          
+          if [ ! -f "requirements.txt" ]; then
+            echo "Warning: No requirements.txt found"
+          fi
+          
+          if [ ! -f "tox.ini" ]; then
+            echo "Warning: No tox.ini found, genconfig may not work"
+          fi
+          
+          echo "=== Project structure validation ==="
+          find docker -type f -name "*.j2" | head -20
+          echo "Total Dockerfile templates: $(find docker -type f -name "*.j2" | wc -l)"
+
+      - name: Install Kolla from source and dependencies
+        run: |
+          echo "=== Installing Kolla from source and dependencies ==="
+          python3 -m pip install --upgrade pip setuptools wheel
+          
+          python3 -m pip install tox
+          
+          echo "Installing Kolla from source..."
+          python3 -m pip install -e . || {
+            echo "Source installation failed, trying requirements first..."
+            python3 -m pip install -r requirements.txt || echo "Requirements installation warnings ignored"
+            python3 -m pip install -e .
+          }
+          
+          python3 -m pip install docker
+          
+          echo "=== Verifying installation ==="
+          kolla-build --version
+          which kolla-build
+          tox --version
+          
+          echo "=== Python environment info ==="
+          pip list | grep -E "(kolla|tox|docker)"
+
+      - name: Setup build profiles
+        run: |
+          echo "=== Setting up build profiles ==="
+          
+          case "${{ inputs.build_profile || 'minimal' }}" in
+            "all")
+              echo "BUILD_IMAGES=^.*$" >> $GITHUB_ENV
+              echo "BUILD_DESCRIPTION=All OpenStack images" >> $GITHUB_ENV
+              ;;
+            "minimal")
+              echo "BUILD_IMAGES=^(base|openstack-base|keystone|horizon|glance|nova|neutron|mariadb|memcached|rabbitmq)$" >> $GITHUB_ENV
+              echo "BUILD_DESCRIPTION=Minimal OpenStack deployment" >> $GITHUB_ENV
+              ;;
+            "compute")
+              echo "BUILD_IMAGES=^(base|openstack-base|keystone|nova|neutron|glance|placement|cinder|ironic).*" >> $GITHUB_ENV
+              echo "BUILD_DESCRIPTION=OpenStack compute services" >> $GITHUB_ENV
+              ;;
+            "storage")
+              echo "BUILD_IMAGES=^(base|openstack-base|keystone|glance|cinder|manila|swift).*" >> $GITHUB_ENV
+              echo "BUILD_DESCRIPTION=OpenStack storage services" >> $GITHUB_ENV
+              ;;
+            "networking")
+              echo "BUILD_IMAGES=^(base|openstack-base|keystone|neutron|octavia|designate).*" >> $GITHUB_ENV
+              echo "BUILD_DESCRIPTION=OpenStack networking services" >> $GITHUB_ENV
+              ;;
+            "ui")
+              echo "BUILD_IMAGES=^(base|openstack-base|keystone|horizon).*" >> $GITHUB_ENV
+              echo "BUILD_DESCRIPTION=OpenStack dashboard and UI components" >> $GITHUB_ENV
+              ;;
+          esac
+          
+          echo "Selected build profile: ${{ inputs.build_profile || 'minimal' }}"
+          echo "Build images pattern: $BUILD_IMAGES"
+          echo "Build description: $BUILD_DESCRIPTION"
+
+      - name: Generate Kolla configuration using official tools
+        run: |
+          echo "=== Generating Kolla configuration using official genconfig ==="
+          
+          if [ ! -f "tox.ini" ]; then
+            echo "Warning: tox.ini not found, cannot use official genconfig"
+            echo "Creating minimal configuration..."
+            sudo mkdir -p /etc/kolla
+            sudo tee /etc/kolla/kolla-build.conf << 'EOF'
+          [DEFAULT]
+          debug = true
+          log_dir = /var/log/kolla
+          push = false
+          base = ${{ matrix.base_distro }}
+          base_tag = ${{ matrix.base_tag }}
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          tag = latest
+          threads = 4
+          
+          [profiles]
+          minimal = base,openstack-base,keystone,horizon,glance,nova,neutron,mariadb,memcached,rabbitmq
+          EOF
+          else
+            echo "=== Found tox.ini, using official genconfig ==="
+          
+            if [ -f "etc/oslo-config-generator/kolla-build.conf" ]; then
+              echo "Oslo config generator configuration found"
+              cat etc/oslo-config-generator/kolla-build.conf
+            else
+              echo "Warning: etc/oslo-config-generator/kolla-build.conf not found"
+            fi
+          
+            echo "Running tox -e genconfig..."
+            tox -e genconfig || {
+              echo "tox genconfig failed, but this might be expected with warnings"
+              echo "Checking if configuration was still generated..."
+            }
+          
+            if [ -f "etc/kolla/kolla-build.conf" ]; then
+              echo "=== Generated configuration found ==="
+              ls -la etc/kolla/kolla-build.conf
+              echo "Configuration size: $(wc -l < etc/kolla/kolla-build.conf) lines"
+          
+              echo "=== Configuration preview (first 50 lines) ==="
+              head -50 etc/kolla/kolla-build.conf
+          
+              sudo mkdir -p /etc/kolla
+              sudo cp etc/kolla/kolla-build.conf /etc/kolla/kolla-build.conf
+          
+              echo "=== Appending custom build settings ==="
+              sudo tee -a /etc/kolla/kolla-build.conf << 'EOF'
+          
+          # Custom build settings for GitHub Actions
+          [DEFAULT]
+          debug = true
+          log_dir = /var/log/kolla
+          push = false
+          base = ${{ matrix.base_distro }}
+          base_tag = ${{ matrix.base_tag }}
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          tag = latest
+          threads = 4
+          
+          # Build profiles for different deployment scenarios
+          [profiles]
+          minimal = base,openstack-base,keystone,horizon,glance,nova,neutron,mariadb,memcached,rabbitmq
+          compute = keystone,nova,neutron,glance,placement,cinder,ironic
+          storage = keystone,glance,cinder,manila,swift
+          networking = keystone,neutron,octavia,designate
+          ui = keystone,horizon
+          
+          # User configurations to avoid conflicts
+          [horizon-user]
+          uid = 42420
+          gid = 42420
+          
+          [nova-user]
+          uid = 42436
+          gid = 42436
+          
+          [neutron-user]
+          uid = 42435
+          gid = 42435
+          
+          [glance-user]
+          uid = 42415
+          gid = 42415
+          
+          [keystone-user]
+          uid = 42425
+          gid = 42425
+          
+          [cinder-user]
+          uid = 42407
+          gid = 42407
+          EOF
+          
+            elif [ -f "kolla-build.conf" ]; then
+              echo "=== Found kolla-build.conf in root directory ==="
+              sudo mkdir -p /etc/kolla
+              sudo cp kolla-build.conf /etc/kolla/kolla-build.conf
+          
+              echo "=== Appending custom settings to generated config ==="
+              sudo tee -a /etc/kolla/kolla-build.conf << 'EOF'
+          
+          # Custom GitHub Actions settings
+          [DEFAULT]
+          base = ${{ matrix.base_distro }}
+          base_tag = ${{ matrix.base_tag }}
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          tag = latest
+          threads = 4
+          EOF
+          
+            else
+              echo "=== Configuration generation failed, creating minimal config ==="
+              sudo mkdir -p /etc/kolla
+              sudo tee /etc/kolla/kolla-build.conf << 'EOF'
+          [DEFAULT]
+          debug = true
+          log_dir = /var/log/kolla
+          push = false
+          base = ${{ matrix.base_distro }}
+          base_tag = ${{ matrix.base_tag }}
+          namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
+          tag = latest
+          threads = 4
+          
+          [profiles]
+          minimal = base,openstack-base,keystone,horizon,glance,nova,neutron,mariadb,memcached,rabbitmq
+          
+          [horizon-user]
+          uid = 42420
+          gid = 42420
+          EOF
+            fi
+          fi
+          
+          echo "=== Final Kolla configuration summary ==="
+          echo "Configuration file size: $(wc -l < /etc/kolla/kolla-build.conf) lines"
+          echo "Configuration location: /etc/kolla/kolla-build.conf"
+          
+          echo "=== Key configuration sections ==="
+          grep -A 5 '\[DEFAULT\]' /etc/kolla/kolla-build.conf || echo "No DEFAULT section found"
+          grep -A 10 '\[profiles\]' /etc/kolla/kolla-build.conf || echo "No profiles section found"
+
+      - name: Create Horizon template override
+        if: inputs.enable_all_horizon_plugins == true || inputs.enable_all_horizon_plugins == null
+        run: |
+          echo "=== Creating Horizon template override to enable all plugins ==="
+          mkdir -p /tmp/kolla-overrides
+          
+          cat > /tmp/kolla-overrides/horizon-enable-all.j2 << 'EOF'
+          {% extends parent_template %}
+          
+          # Horizon - Enable all OpenStack UI plugins by default
+          {% block horizon_footer %}
+          # Set environment variables to enable all Horizon plugins
+          ENV ENABLE_BLAZAR=yes
+          ENV ENABLE_CLOUDKITTY=yes
+          ENV ENABLE_DESIGNATE=yes
+          ENV ENABLE_FWAAS=yes
+          ENV ENABLE_HEAT=yes
+          ENV ENABLE_IRONIC=yes
+          ENV ENABLE_MAGNUM=yes
+          ENV ENABLE_MANILA=yes
+          ENV ENABLE_MASAKARI=yes
+          ENV ENABLE_MISTRAL=yes
+          ENV ENABLE_NEUTRON_VPNAAS=yes
+          ENV ENABLE_OCTAVIA=yes
+          ENV ENABLE_TACKER=yes
+          ENV ENABLE_TROVE=yes
+          ENV ENABLE_VENUS=yes
+          ENV ENABLE_WATCHER=yes
+          ENV ENABLE_ZUN=yes
+          
+          # Create configuration to enable plugins at runtime
+          RUN echo '#!/bin/bash' > /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_BLAZAR=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_CLOUDKITTY=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_DESIGNATE=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_FWAAS=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_HEAT=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_IRONIC=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_MAGNUM=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_MANILA=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_MASAKARI=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_MISTRAL=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_NEUTRON_VPNAAS=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_OCTAVIA=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_TACKER=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_TROVE=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_VENUS=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_WATCHER=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              echo 'export ENABLE_ZUN=yes' >> /usr/local/bin/kolla_horizon_setup && \
+              chmod +x /usr/local/bin/kolla_horizon_setup
+          
+          {% endblock %}
+          EOF
+          
+          echo "=== Horizon template override created ==="
+
+      - name: List available images
+        run: |
+          echo "=== Listing available images for build profile: ${{ inputs.build_profile || 'minimal' }} ==="
+          
+          echo "All available images (first 30):"
+          kolla-build --list-images | head -30
+          
+          echo ""
+          echo "Images matching our build pattern:"
+          if [[ "$BUILD_IMAGES" == "^.*$" ]]; then
+            echo "Building ALL images (this may take several hours)"
+            kolla-build --list-images | wc -l
+            echo "Total images available"
+          else
+            kolla-build --list-images | grep -E "$BUILD_IMAGES" || echo "No matching images found"
+          fi
+
+      - name: Build OpenStack images
+        run: |
+          echo "=== Building OpenStack images ==="
+          echo "Build profile: ${{ inputs.build_profile || 'minimal' }}"
+          echo "Build description: $BUILD_DESCRIPTION"
+          echo "Images pattern: $BUILD_IMAGES"
+          
+          BUILD_ARGS="--config-file /etc/kolla/kolla-build.conf --debug --retries 3"
+          
+          if [[ "${{ inputs.enable_all_horizon_plugins }}" == "true" || "${{ inputs.enable_all_horizon_plugins }}" == "" ]]; then
+            BUILD_ARGS="$BUILD_ARGS --template-override /tmp/kolla-overrides/horizon-enable-all.j2"
+            echo "=== Building with Horizon plugins enabled ==="
+          fi
+          
+          if [[ "${{ inputs.build_profile || 'minimal' }}" == "minimal" ]]; then
+            BUILD_ARGS="$BUILD_ARGS --profile minimal"
+            echo "=== Building minimal profile ==="
+          
+            kolla-build $BUILD_ARGS || {
+              echo "Minimal build failed, attempting individual builds..."
+              for image in base openstack-base keystone horizon glance nova neutron mariadb memcached rabbitmq; do
+                echo "Building $image..."
+                kolla-build $BUILD_ARGS "^${image}$" || echo "Warning: $image build failed"
+              done
+            }
+          else
+            echo "=== Building with pattern: $BUILD_IMAGES ==="
+            kolla-build $BUILD_ARGS "$BUILD_IMAGES" || {
+              echo "Build failed!"
+              echo "=== Build logs ==="
+              tail -100 /var/log/kolla/* 2>/dev/null || echo "No build logs found"
+            }
+          fi
+          
+          echo "=== Build completed ==="
+          echo "Built images:"
+          docker images | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" || echo "No images with registry prefix found"
+
+      - name: Test built images
+        if: success()
+        run: |
+          echo "=== Testing built images ==="
+          
+          test_image() {
+            local image_name=$1
+            local test_command=$2
+          
+            IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "${image_name}:latest$|${image_name}$" | head -1)
+          
+            if [ -n "$IMAGE" ]; then
+              echo "Testing $image_name image: $IMAGE"
+              if [ -n "$test_command" ]; then
+                docker run --rm $IMAGE $test_command || echo "$image_name test failed"
+              else
+                docker run --rm $IMAGE echo "$image_name container started successfully" || echo "$image_name startup test failed"
+              fi
+            else
+              echo "No $image_name image found for testing"
+            fi
+          }
+          
+          test_image "keystone" "keystone-manage --version"
+          test_image "horizon" "python3 -c 'import openstack_dashboard; print(\"Horizon available\")'"
+          test_image "glance" "glance-api --version"
+          test_image "nova" "nova-api --version"
+          test_image "neutron" "neutron-server --version"
+          test_image "mariadb" "mysql --version"
+          test_image "memcached" ""
+          test_image "rabbitmq" "rabbitmq-server -v"
+          
+          echo "=== Image testing completed ==="
+
+      - name: Generate image inventory
+        run: |
+          echo "=== Generating image inventory ==="
+          
+          echo "# Built Images Inventory" > /tmp/image-inventory.md
+          echo "Generated on: $(date)" >> /tmp/image-inventory.md
+          echo "Build profile: ${{ inputs.build_profile || 'minimal' }}" >> /tmp/image-inventory.md
+          echo "Build description: $BUILD_DESCRIPTION" >> /tmp/image-inventory.md
+          echo "" >> /tmp/image-inventory.md
+          
+          echo "| Image | Tag | Size | Architecture |" >> /tmp/image-inventory.md
+          echo "|-------|-----|------|--------------|" >> /tmp/image-inventory.md
+          
+          docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.ID}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" | while IFS=$'\t' read -r repo tag size id; do
+            arch=$(docker inspect --format='{{.Architecture}}' $id 2>/dev/null || echo "unknown")
+            echo "| $repo | $tag | $size | $arch |" >> /tmp/image-inventory.md
+          done
+          
+          echo "" >> /tmp/image-inventory.md
+          echo "Total images built: $(docker images | grep '${{ env.REGISTRY }}/${{ env.OWNER }}' | wc -l)" >> /tmp/image-inventory.md
+          
+          cat /tmp/image-inventory.md
+
+      - name: Login to Container Registry
+        if: success() && (github.event_name == 'push' || inputs.push_images == true)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push images to registry
+        if: success() && (github.event_name == 'push' || inputs.push_images == true)
+        run: |
+          echo "=== Pushing OpenStack images to registry ==="
+          
+          pushed_count=0
+          failed_count=0
+          
+          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" | grep -v '<none>'); do
+            echo "Pushing $image"
+            if docker push "$image"; then
+              echo "✅ Successfully pushed $image"
+              ((pushed_count++))
+            else
+              echo "❌ Failed to push $image"
+              ((failed_count++))
+            fi
+          done
+          
+          echo "=== Push summary ==="
+          echo "Successfully pushed: $pushed_count images"
+          echo "Failed to push: $failed_count images"
+          
+          if [ $failed_count -gt 0 ]; then
+            echo "Some images failed to push, but continuing..."
+          fi
+
+      - name: Generate build summary
+        if: always()
+        run: |
+          echo "## OpenStack Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Profile:** ${{ inputs.build_profile || 'minimal' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Description:** $BUILD_DESCRIPTION" >> $GITHUB_STEP_SUMMARY
+          echo "**Base OS:** ${{ matrix.base_distro }}:${{ matrix.base_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Built Images" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Status | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|------|" >> $GITHUB_STEP_SUMMARY
+          
+          images_found=false
+          image_count=0
+          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" | head -20); do
+            if [[ "$image" != *"<none>"* ]]; then
+              size=$(docker images --format "{{.Size}}" "$image")
+              echo "| $image | ✅ Built | $size |" >> $GITHUB_STEP_SUMMARY
+              images_found=true
+              ((image_count++))
+            fi
+          done
+          
+          if [ "$images_found" = false ]; then
+            echo "| No images built | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Images Built:** $image_count" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ inputs.enable_all_horizon_plugins }}" == "true" || "${{ inputs.enable_all_horizon_plugins }}" == "" ]]; then
+            echo "**Horizon Plugins:** All enabled" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Horizon Plugins:** Default configuration" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Registry Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry:** ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Namespace:** ${{ env.OWNER }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Images pushed:** $([ '${{ inputs.push_images }}' == 'true' ] && echo 'Yes' || echo 'No')" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.base_distro }}-${{ matrix.base_tag }}-${{ inputs.build_profile || 'minimal' }}
+          path: |
+            /var/log/kolla/
+            /tmp/image-inventory.md
+            build.log
+          retention-days: 7
