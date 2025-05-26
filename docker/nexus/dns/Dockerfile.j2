@@ -1,4 +1,4 @@
-FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
+FROM {{ namespace }}/{{ image_prefix }}nexus:{{ tag }}
 
 {% block labels %}
     LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}"
@@ -8,56 +8,24 @@ FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
 
 {% import "macros.j2" as macros with context %}
 
-{{ macros.configure_user(name='nexus') }}
-
+# 只安装 DNS 特有的包
 {% if base_package_type == 'rpm' %}
     {% set nexus_dns_packages = [
-        'dnsmasq',
-        'jq',
-        'curl',
-        'bind-utils',
-        'iproute',
-        'procps-ng'
+        'dnsmasq'
     ] %}
 {% elif base_package_type == 'deb' %}
     {% set nexus_dns_packages = [
-        'dnsmasq',
-        'jq',
-        'curl',
-        'dnsutils',
-        'iproute2',
-        'procps'
+        'dnsmasq'
     ] %}
 {% endif %}
 
 {{ macros.install_packages(nexus_dns_packages | customizable("packages")) }}
 
-{% block nexus_dns_kubectl_install %}
-    # Install kubectl for service discovery
-    RUN set -x \
-    && KUBECTL_VERSION="{{ kubectl_version | default('v1.28.0') }}" \
-    && curl -L -o /usr/local/bin/kubectl \
-    "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
-    && chmod +x /usr/local/bin/kubectl \
-    && kubectl version --client
-{% endblock %}
-
-{% set nexus_dns_pip_packages = [
-    'python-openstackclient',
-    'python-keystoneclient'
-] %}
-
-{% block nexus_dns_pip_install %}
-    RUN {{ macros.install_pip(nexus_dns_pip_packages | customizable("pip_packages")) }}
-{% endblock %}
-
 {% block nexus_dns_setup %}
-    # Create nexus directories with proper ownership (separate from ironic)
-    RUN mkdir -p /var/log/nexus/dnsmasq /etc/nexus /var/lib/nexus /var/run/nexus \
-    && chown -R nexus:nexus /var/log/nexus /etc/nexus /var/lib/nexus /var/run/nexus
+    # Create DNS-specific directories
+    RUN mkdir -p /var/log/nexus/dnsmasq /etc/nexus/dns \
+    && chown -R nexus:nexus /var/log/nexus/dnsmasq /etc/nexus/dns
 {% endblock %}
-
-{{ macros.kolla_patch_sources() }}
 
 {% block nexus_dns_footer %}{% endblock %}
 {% block footer %}{% endblock %}

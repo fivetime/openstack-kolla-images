@@ -1,0 +1,63 @@
+FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
+
+{% block labels %}
+    LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}"
+{% endblock %}
+
+{% block nexus_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{{ macros.configure_user(name='nexus') }}
+
+{% if base_package_type == 'rpm' %}
+    {% set nexus_packages = [
+        'jq',
+        'curl',
+        'bind-utils',
+        'iproute',
+        'procps-ng'
+    ] %}
+{% elif base_package_type == 'deb' %}
+    {% set nexus_packages = [
+        'jq',
+        'curl',
+        'dnsutils',
+        'iproute2',
+        'procps'
+    ] %}
+{% endif %}
+
+{{ macros.install_packages(nexus_packages | customizable("packages")) }}
+
+{% block nexus_kubectl_install %}
+    # Install kubectl for service discovery
+    RUN set -x \
+    && KUBECTL_VERSION="{{ kubectl_version | default('v1.28.0') }}" \
+    && curl -L -o /usr/local/bin/kubectl \
+    "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    && chmod +x /usr/local/bin/kubectl \
+    && kubectl version --client
+{% endblock %}
+
+{% set nexus_pip_packages = [
+    'python-openstackclient',
+    'python-keystoneclient'
+] %}
+
+{% block nexus_pip_install %}
+    RUN {{ macros.install_pip(nexus_pip_packages | customizable("pip_packages")) }}
+{% endblock %}
+
+{% block nexus_setup %}
+    # Create nexus directories with proper ownership
+    RUN mkdir -p /var/log/nexus /etc/nexus /var/lib/nexus /var/run/nexus \
+    && chown -R nexus:nexus /var/log/nexus /etc/nexus /var/lib/nexus /var/run/nexus
+{% endblock %}
+
+{{ macros.kolla_patch_sources() }}
+
+{% block nexus_footer %}{% endblock %}
+{% block footer %}{% endblock %}
+
+USER nexus
