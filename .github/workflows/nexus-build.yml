@@ -142,26 +142,35 @@ jobs:
           echo "=== Testing Nexus images ==="
           
           # 检查构建的镜像
-          docker images | grep nexus || echo "Images not found in local registry"
+          echo "=== Available images ==="
+          docker images | grep -E "(nexus|${{ env.OWNER }})" || echo "No nexus images found"
+          
+          # 获取实际的镜像标签
+          REGISTRY_PREFIX="${{ env.REGISTRY }}/${{ env.OWNER }}"
+          
+          # 测试 nexus 基础镜像
+          BASE_IMAGE="${REGISTRY_PREFIX}/nexus:latest"
+          if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "nexus:latest"; then
+            echo "Testing nexus base image..."
+            docker run --rm $BASE_IMAGE kubectl version --client || echo "kubectl test failed"
+            docker run --rm $BASE_IMAGE jq --version || echo "jq test failed"
+            docker run --rm $BASE_IMAGE openstack --version || echo "openstack test failed"
+          fi
           
           # 测试 nexus-proxy 镜像
-          PROXY_IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/nexus-proxy:latest"
-          if docker images | grep -q nexus-proxy; then
-            echo "Testing nexus-proxy tools..."
-            docker run --rm $PROXY_IMAGE kubectl version --client || echo "kubectl test failed"
-            docker run --rm $PROXY_IMAGE jq --version || echo "jq test failed"
+          PROXY_IMAGE="${REGISTRY_PREFIX}/nexus-proxy:latest"
+          if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "nexus-proxy:latest"; then
+            echo "Testing nexus-proxy image..."
             docker run --rm $PROXY_IMAGE nginx -v || echo "nginx test failed"
-            docker run --rm $PROXY_IMAGE openstack --version || echo "openstack test failed"
+            docker run --rm $PROXY_IMAGE kubectl version --client || echo "kubectl test failed"
           fi
           
           # 测试 nexus-dns 镜像
-          DNS_IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/nexus-dns:latest"  
-          if docker images | grep -q nexus-dns; then
-            echo "Testing nexus-dns tools..."
-            docker run --rm $DNS_IMAGE kubectl version --client || echo "kubectl test failed"
-            docker run --rm $DNS_IMAGE jq --version || echo "jq test failed"
+          DNS_IMAGE="${REGISTRY_PREFIX}/nexus-dns:latest"  
+          if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "nexus-dns:latest"; then
+            echo "Testing nexus-dns image..."
             docker run --rm $DNS_IMAGE dnsmasq --version || echo "dnsmasq test failed"
-            docker run --rm $DNS_IMAGE dig -v || echo "dig test failed"
+            docker run --rm $DNS_IMAGE kubectl version --client || echo "kubectl test failed"
           fi
 
       - name: Generate images metadata
@@ -170,6 +179,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/nexus
             ${{ env.REGISTRY }}/${{ env.OWNER }}/nexus-proxy
             ${{ env.REGISTRY }}/${{ env.OWNER }}/nexus-dns
           tags: |
