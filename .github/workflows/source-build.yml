@@ -1,4 +1,4 @@
-name: Build Kolla Images
+name: Build Images From Source
 
 on:
   workflow_dispatch:  # 手动触发
@@ -39,7 +39,7 @@ jobs:
         base_distro: [
           "ubuntu"
         ]
-        openstack_release: [
+        release: [
           "2024.2",
           "2025.1"
         ]
@@ -78,7 +78,7 @@ jobs:
           namespace = ${{ env.OWNER }}
           # namespace = ${{ env.REGISTRY }}/${{ env.OWNER }}
           push = true
-          tag = ${{ matrix.openstack_release }}
+          tag = ${{ matrix.release }}
           base = ${{ matrix.base_distro }}
           registry = ${{ env.REGISTRY }}
           build_args = {"org.opencontainers.image.source":"https://github.com/${{ github.repository }}"}
@@ -89,172 +89,172 @@ jobs:
           [openstack-base]
           type = git
           location = https://opendev.org/openstack/requirements
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [aodh-base]
           type = git
           location = https://opendev.org/openstack/aodh
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [barbican-base]
           type = git
           location = https://opendev.org/openstack/barbican
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [bifrost-base]
           type = git
           location = https://opendev.org/openstack/bifrost
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [blazar-base]
           type = git
           location = https://opendev.org/openstack/blazar
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [ceilometer-base]
           type = git
           location = https://opendev.org/openstack/ceilometer
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [cinder-base]
           type = git
           location = https://opendev.org/openstack/cinder
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [cloudkitty-base]
           type = git
           location = https://opendev.org/openstack/cloudkitty
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [cyborg-base]
           type = git
           location = https://opendev.org/openstack/cyborg
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [designate-base]
           type = git
           location = https://opendev.org/openstack/designate
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [glance-base]
           type = git
           location = https://opendev.org/openstack/glance
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [gnocchi-base]
           type = git
           location = https://opendev.org/openstack/gnocchi
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [heat-base]
           type = git
           location = https://opendev.org/openstack/heat
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [horizon]
           type = git
           location = https://opendev.org/openstack/horizon
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [ironic-base]
           type = git
           location = https://opendev.org/openstack/ironic
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [ironic-inspector-base]
           type = git
           location = https://opendev.org/openstack/ironic-inspector
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [keystone-base]
           type = git
           location = https://opendev.org/openstack/keystone
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [kuryr-base]
           type = git
           location = https://opendev.org/openstack/kuryr
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [magnum-base]
           type = git
           location = https://opendev.org/openstack/magnum
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [manila-base]
           type = git
           location = https://opendev.org/openstack/manila
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [masakari-base]
           type = git
           location = https://opendev.org/openstack/masakari
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [mistral-base]
           type = git
           location = https://opendev.org/openstack/mistral
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [neutron-base]
           type = git
           location = https://opendev.org/openstack/neutron
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [networking-baremetal-base]
           type = git
           location = https://opendev.org/openstack/networking-baremetal
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [nova-base]
           type = git
           location = https://opendev.org/openstack/nova
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [octavia-base]
           type = git
           location = https://opendev.org/openstack/octavia
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [placement-base]
           type = git
           location = https://opendev.org/openstack/placement
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [skyline-base]
           type = git
           location = https://opendev.org/openstack/skyline-apiserver
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [skyline-console]
           type = git
           location = https://opendev.org/openstack/skyline-console
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [tacker-base]
           type = git
           location = https://opendev.org/openstack/tacker
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [trove-base]
           type = git
           location = https://opendev.org/openstack/trove
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [venus-base]
           type = git
           location = https://opendev.org/openstack/venus
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [watcher-base]
           type = git
           location = https://opendev.org/openstack/watcher
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           
           [zun-base]
           type = git
           location = https://opendev.org/openstack/zun
-          reference = stable/${{ matrix.openstack_release }}
+          reference = stable/${{ matrix.release }}
           EOF
           
           cat /etc/kolla/kolla-build.conf
