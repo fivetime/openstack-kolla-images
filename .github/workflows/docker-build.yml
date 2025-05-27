@@ -1,4 +1,4 @@
-name: Build Kolla Images (Matrix)
+name: Build Images By Matrix
 
 on:
   workflow_dispatch:
