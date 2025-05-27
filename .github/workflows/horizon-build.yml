@@ -163,11 +163,6 @@ jobs:
           
           # 架构处理
           case "$BASE_ARCH" in
-            x86_64)
-              ARCH_SUFFIX=""
-              DEBIAN_ARCH="amd64"
-              PLATFORM="linux/amd64"
-              ;;
             aarch64)
               ARCH_SUFFIX="-aarch64"
               DEBIAN_ARCH="arm64"
@@ -210,30 +205,30 @@ jobs:
           {% block horizon_footer %}
           # 启用所有 Horizon 插件
           ENV ENABLE_AODH=yes \
-              ENABLE_BARBICAN=yes \
-              ENABLE_BLAZAR=yes \
-              ENABLE_CEILOMETER=yes \
-              ENABLE_CLOUDKITTY=yes \
-              ENABLE_CYBORG=yes \
-              ENABLE_DESIGNATE=yes \
-              ENABLE_FWAAS=yes \
-              ENABLE_GNOCCHI=yes \
-              ENABLE_HEAT=yes \
-              ENABLE_IRONIC=yes \
-              ENABLE_MAGNUM=yes \
-              ENABLE_MANILA=yes \
-              ENABLE_MASAKARI=yes \
-              ENABLE_MISTRAL=yes \
-              ENABLE_NEUTRON_VPNAAS=yes \
-              ENABLE_NEUTRON_TAAS=yes \
-              ENABLE_OCTAVIA=yes \
-              ENABLE_SAHARA=yes \
-              ENABLE_SKYLINE=yes \
-              ENABLE_TACKER=yes \
-              ENABLE_TROVE=yes \
-              ENABLE_VENUS=yes \
-              ENABLE_WATCHER=yes \
-              ENABLE_ZUN=yes
+            ENABLE_BARBICAN=yes \
+            ENABLE_BLAZAR=no \
+            ENABLE_CEILOMETER=yes \
+            ENABLE_CLOUDKITTY=yes \
+            ENABLE_CYBORG=yes \
+            ENABLE_DESIGNATE=yes \
+            ENABLE_FWAAS=yes \
+            ENABLE_GNOCCHI=yes \
+            ENABLE_HEAT=yes \
+            ENABLE_IRONIC=yes \
+            ENABLE_MAGNUM=yes \
+            ENABLE_MANILA=yes \
+            ENABLE_MASAKARI=yes \
+            ENABLE_MISTRAL=yes \
+            ENABLE_NEUTRON_VPNAAS=yes \
+            ENABLE_NEUTRON_TAAS=yes \
+            ENABLE_OCTAVIA=yes \
+            ENABLE_SAHARA=yes \
+            ENABLE_SKYLINE=yes \
+            ENABLE_TACKER=yes \
+            ENABLE_TROVE=yes \
+            ENABLE_VENUS=yes \
+            ENABLE_WATCHER=yes \
+            ENABLE_ZUN=yes
           {% endblock %}
           EOF
 
