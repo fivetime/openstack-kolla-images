@@ -1,0 +1,54 @@
+name: Cleanup Kolla Images
+
+on:
+  workflow_dispatch:  # 手动触发工作流
+
+jobs:
+  delete-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      - name: Create github.json config
+        run: |
+          cat > tools/github.json << EOF
+          {
+            "token": "${{ secrets.CR_PAT }}",
+            "username": "${{ github.repository_owner }}",
+            "is_org": false,
+            "packages": [
+              "keystone", "glance", "nova", "neutron", "cinder", "placement", "heat",
+              "horizon", "aodh", "barbican", "blazar", "ceilometer", "cloudkitty",
+              "cyborg", "designate", "gnocchi", "ironic", "ironic-inspector", "magnum",
+              "manila", "masakari", "mistral", "octavia", "tacker", "trove", "venus",
+              "watcher", "zun", "cron", "etcd", "fluentd", "haproxy", "hacluster",
+              "keepalived", "kolla-toolbox", "letsencrypt", "mariadb", "memcached",
+              "opensearch", "openvswitch", "ovn", "ovsdpdk", "proxysql", "rabbitmq",
+              "redis", "tgtd", "collectd", "dnsmasq", "grafana", "influxdb", "iscsid",
+              "multipathd", "networking-baremetal", "prometheus", "skyline", "telegraf",
+              "bifrost", "kuryr"
+            ]
+          }
+          EOF
+
+      - name: Run cleanup script
+        run: |
+          cd tools
+          python cleanup-github.py
+
+      - name: Cleanup config file
+        if: always()
+        run: |
+          rm -f tools/github.json
