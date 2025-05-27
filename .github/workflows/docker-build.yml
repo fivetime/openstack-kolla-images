@@ -1,4 +1,4 @@
-name: Build Kolla OpenStack Images
+name: Build Images From Docker
 
 on:
   push:
@@ -21,10 +21,19 @@ on:
           - ubuntu
           - rocky
           - debian
-      openstack_release:
-        description: 'OpenStack release version'
+          - centos
+      base_arch:
+        description: 'Target architecture'
         required: false
-        default: '2024.2'
+        default: 'x86_64'
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+      release:
+        description: 'Release version'
+        required: false
+        default: '2025.1'
         type: choice
         options:
           - '2024.2'
@@ -37,8 +46,8 @@ on:
         type: boolean
 
 env:
-  REGISTRY: ghcr.io
-  OWNER: fivetime
+  REGISTRY: ${{ env.REGISTRY }}
+  OWNER: ${{ github.repository_owner }}
 
 jobs:
   build:
@@ -64,56 +73,131 @@ jobs:
       - name: Set build variables
         id: vars
         run: |
-          # 设置所有服务列表
-          ALL_SERVICES="keystone glance nova neutron cinder placement heat horizon aodh barbican blazar ceilometer cloudkitty cyborg designate gnocchi ironic ironic-inspector magnum manila masakari mistral octavia tacker trove venus watcher zun cron etcd fluentd haproxy hacluster keepalived kolla-toolbox letsencrypt mariadb memcached opensearch openvswitch ovn ovsdpdk proxysql rabbitmq redis tgtd collectd dnsmasq grafana influxdb iscsid multipathd networking-baremetal prometheus skyline telegraf bifrost kuryr"
+          # 设置所有服务列表（分类清晰）
+          CORE_SERVICES=(
+            "keystone" "glance" "nova" "neutron" "cinder" "placement" "heat" "horizon"
+          )
+          
+          OPENSTACK_SERVICES=(
+            "aodh" "barbican" "blazar" "ceilometer" "cloudkitty" "cyborg" "designate" 
+            "gnocchi" "ironic" "ironic-inspector" "magnum" "manila" "masakari" "mistral" 
+            "octavia" "tacker" "trove" "venus" "watcher" "zun"
+          )
+          
+          INFRA_SERVICES=(
+            "cron" "etcd" "fluentd" "haproxy" "hacluster" "keepalived" "kolla-toolbox" 
+            "letsencrypt" "mariadb" "memcached" "opensearch" "openvswitch" "ovn" "ovsdpdk" 
+            "proxysql" "rabbitmq" "redis" "tgtd" "collectd" "dnsmasq" "grafana" "influxdb" 
+            "iscsid" "multipathd" "networking-baremetal" "prometheus" "skyline" "telegraf" 
+            "bifrost" "kuryr"
+          )
+          
+          # 合并所有服务
+          ALL_SERVICES=("${CORE_SERVICES[@]}" "${OPENSTACK_SERVICES[@]}" "${INFRA_SERVICES[@]}")
           
           # 确定要构建的服务
           if [ -z "${{ inputs.build_target }}" ]; then
-            BUILD_SERVICES="$ALL_SERVICES"
-            echo "Building all services"
+            BUILD_SERVICES="${ALL_SERVICES[*]}"
+            echo "Building all services (${#ALL_SERVICES[@]} total)"
+            echo "Core: ${CORE_SERVICES[*]}"
+            echo "OpenStack: ${OPENSTACK_SERVICES[*]}"
+            echo "Infrastructure: ${INFRA_SERVICES[*]}"
           else
             BUILD_SERVICES="${{ inputs.build_target }}"
             echo "Building specified services: $BUILD_SERVICES"
           fi
           
-          # 生成标签（格式：版本-系统_代号）
+          # 生成标签（官方格式：版本-系统_代号-架构）
           BASE_DISTRO="${{ inputs.base_distro || 'ubuntu' }}"
-          RELEASE="${{ inputs.openstack_release || '2024.2' }}"
+          BASE_ARCH="${{ inputs.base_arch || 'x86_64' }}"
+          RELEASE="${{ inputs.release || '2025.1' }}"
           
+          # 根据官方配置设置标签
           case "$BASE_DISTRO" in
             ubuntu)
-              OS_TAG="ubuntu_noble"  # Ubuntu 24.04 Noble
+              OS_TAG="ubuntu_noble"      # Ubuntu 24.04 LTS Noble Numbat
+              BASE_IMAGE="ubuntu:24.04"
               ;;
             debian)
-              OS_TAG="debian_bookworm"  # Debian 12 Bookworm
+              OS_TAG="debian_bookworm"   # Debian 12 Bookworm
+              BASE_IMAGE="debian:bookworm"
               ;;
             rocky)
-              OS_TAG="rocky_9"  # Rocky Linux 9
+              OS_TAG="rocky_9"           # Rocky Linux 9
+              BASE_IMAGE="quay.io/rockylinux/rockylinux:9"
+              ;;
+            centos)
+              OS_TAG="centos_stream9"    # CentOS Stream 9
+              BASE_IMAGE="quay.io/centos/centos:stream9"
               ;;
             *)
-              OS_TAG="ubuntu_noble"
+              OS_TAG="ubuntu_noble"      # 默认使用 Ubuntu 24.04 Noble
+              BASE_IMAGE="ubuntu:24.04"
               ;;
           esac
           
-          FULL_TAG="${RELEASE}-${OS_TAG}"
+          # 架构处理
+          case "$BASE_ARCH" in
+            x86_64)
+              ARCH_SUFFIX=""
+              DEBIAN_ARCH="amd64"
+              PLATFORM="linux/amd64"
+              ;;
+            aarch64)
+              ARCH_SUFFIX="-aarch64"
+              DEBIAN_ARCH="arm64"
+              PLATFORM="linux/arm64"
+              ;;
+            *)
+              ARCH_SUFFIX=""
+              DEBIAN_ARCH="amd64"
+              PLATFORM="linux/amd64"
+              ;;
+          esac
+          
+          # 构建完整标签
+          if [ "$BASE_ARCH" = "x86_64" ]; then
+            FULL_TAG="${RELEASE}-${OS_TAG}"
+          else
+            FULL_TAG="${RELEASE}-${OS_TAG}${ARCH_SUFFIX}"
+          fi
           
           echo "build_services=$BUILD_SERVICES" >> $GITHUB_OUTPUT
           echo "full_tag=$FULL_TAG" >> $GITHUB_OUTPUT
           echo "os_tag=$OS_TAG" >> $GITHUB_OUTPUT
+          echo "base_arch=$BASE_ARCH" >> $GITHUB_OUTPUT
+          echo "debian_arch=$DEBIAN_ARCH" >> $GITHUB_OUTPUT
+          echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
+          echo "base_image=$BASE_IMAGE" >> $GITHUB_OUTPUT
           
-          echo "Final tag will be: $FULL_TAG"
+          echo "Architecture: $BASE_ARCH (debian: $DEBIAN_ARCH, platform: $PLATFORM)"
+          echo "Base image: $BASE_IMAGE"
+          echo "Final tag: $FULL_TAG"
+      - name: Set up Docker Buildx (for multi-arch)
+        if: inputs.base_arch == 'aarch64'
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Kolla images
         run: |
           echo "Building services: ${{ steps.vars.outputs.build_services }}"
           echo "Base: ${{ inputs.base_distro || 'ubuntu' }}"
-          echo "OpenStack Release: ${{ inputs.openstack_release || '2024.2' }}"
+          echo "Architecture: ${{ steps.vars.outputs.base_arch }}"
+          echo "OpenStack Release: ${{ inputs.release || '2025.1' }}"
           echo "Tag: ${{ steps.vars.outputs.full_tag }}"
+          echo "Platform: ${{ steps.vars.outputs.platform }}"
+          
+          # 构建参数
+          BUILD_ARGS=""
+          if [ "${{ steps.vars.outputs.base_arch }}" = "aarch64" ]; then
+            BUILD_ARGS="--platform ${{ steps.vars.outputs.platform }} --base-arch aarch64"
+          fi
           
           kolla-build \
             --base ${{ inputs.base_distro || 'ubuntu' }} \
             --namespace ${{ env.REGISTRY }}/${{ env.OWNER }} \
             --tag ${{ steps.vars.outputs.full_tag }} \
             --retries 3 \
+            $BUILD_ARGS \
             ${{ steps.vars.outputs.build_services }}
 
       - name: List built images
