@@ -20,6 +20,38 @@ on:
           - ubuntu
           - rocky
           - debian
+          - centos
+      base_version:
+        description: 'Base distribution version'
+        required: false
+        default: 'noble'
+        type: choice
+        options:
+          - focal
+          - jammy
+          - noble
+          - buster
+          - bullseye
+          - bookworm
+          - '8'
+          - '9'
+      base_arch:
+        description: 'Target architecture'
+        required: false
+        default: 'x86_64'
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+      release:
+        description: 'Release version'
+        required: false
+        default: '2025.1'
+        type: choice
+        options:
+          - '2024.2'
+          - '2025.1'
+          - 'master'
       push_images:
         description: 'Push images to registry'
         required: false
@@ -27,8 +59,8 @@ on:
         type: boolean
 
 env:
-  REGISTRY: ghcr.io
-  OWNER: fivetime
+  REGISTRY: ${{ env.REGISTRY }}
+  OWNER: ${{ github.repository_owner }}
 
 jobs:
   build:
@@ -51,16 +83,141 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install kolla docker
 
+      - name: Set build variables
+        id: vars
+        run: |
+          # 生成标签（官方格式：版本-系统_代号-架构）
+          BASE_DISTRO="${{ inputs.base_distro || 'ubuntu' }}"
+          BASE_ARCH="${{ inputs.base_arch || 'x86_64' }}"
+          RELEASE="${{ inputs.release || '2025.1' }}"
+          
+          # 生成标签（官方格式：版本-系统_代号-架构）
+          BASE_DISTRO="${{ inputs.base_distro || 'ubuntu' }}"
+          BASE_VERSION="${{ inputs.base_version || 'noble' }}"
+          BASE_ARCH="${{ inputs.base_arch || 'x86_64' }}"
+          RELEASE="${{ inputs.release || '2025.1' }}"
+          
+          # 根据官方配置设置标签和基础镜像
+          case "$BASE_DISTRO" in
+            ubuntu)
+              case "$BASE_VERSION" in
+                focal)
+                  OS_TAG="ubuntu_focal"        # Ubuntu 20.04 LTS Focal
+                  BASE_IMAGE="ubuntu:20.04"
+                  ;;
+                jammy)
+                  OS_TAG="ubuntu_jammy"        # Ubuntu 22.04 LTS Jammy
+                  BASE_IMAGE="ubuntu:22.04"
+                  ;;
+                *)
+                  OS_TAG="ubuntu_noble"        # 默认 Ubuntu 24.04 Noble
+                  BASE_IMAGE="ubuntu:24.04"
+                  ;;
+              esac
+              ;;
+            debian)
+              case "$BASE_VERSION" in
+                buster)
+                  OS_TAG="debian_buster"       # Debian 10 Buster
+                  BASE_IMAGE="debian:buster"
+                  ;;
+                bullseye)
+                  OS_TAG="debian_bullseye"     # Debian 11 Bullseye
+                  BASE_IMAGE="debian:bullseye"
+                  ;;
+                *)
+                  OS_TAG="debian_bookworm"     # 默认 Debian 12 Bookworm
+                  BASE_IMAGE="debian:bookworm"
+                  ;;
+              esac
+              ;;
+            rocky)
+              case "$BASE_VERSION" in
+                8)
+                  OS_TAG="rocky_8"             # Rocky Linux 8
+                  BASE_IMAGE="quay.io/rockylinux/rockylinux:8"
+                  ;;
+                *)
+                  OS_TAG="rocky_9"             # 默认 Rocky Linux 9
+                  BASE_IMAGE="quay.io/rockylinux/rockylinux:9"
+                  ;;
+              esac
+              ;;
+            centos)
+              case "$BASE_VERSION" in
+                8)
+                  OS_TAG="centos_stream8"      # CentOS Stream 8
+                  BASE_IMAGE="quay.io/centos/centos:stream8"
+                  ;;
+                *)
+                  OS_TAG="centos_stream9"      # 默认 CentOS Stream 9
+                  BASE_IMAGE="quay.io/centos/centos:stream9"
+                  ;;
+              esac
+              ;;
+            *)
+              OS_TAG="ubuntu_noble"            # 默认 Ubuntu 24.04 Noble
+              BASE_IMAGE="ubuntu:24.04"
+              ;;
+          esac
+          
+          # 架构处理
+          case "$BASE_ARCH" in
+            x86_64)
+              ARCH_SUFFIX=""
+              DEBIAN_ARCH="amd64"
+              PLATFORM="linux/amd64"
+              ;;
+            aarch64)
+              ARCH_SUFFIX="-aarch64"
+              DEBIAN_ARCH="arm64"
+              PLATFORM="linux/arm64"
+              ;;
+            *)
+              ARCH_SUFFIX=""
+              DEBIAN_ARCH="amd64"
+              PLATFORM="linux/amd64"
+              ;;
+          esac
+          
+          # 构建完整标签
+          if [ "$BASE_ARCH" = "x86_64" ]; then
+            FULL_TAG="${RELEASE}-${OS_TAG}"
+          else
+            FULL_TAG="${RELEASE}-${OS_TAG}${ARCH_SUFFIX}"
+          fi
+          
+          echo "full_tag=$FULL_TAG" >> $GITHUB_OUTPUT
+          echo "os_tag=$OS_TAG" >> $GITHUB_OUTPUT
+          echo "base_arch=$BASE_ARCH" >> $GITHUB_OUTPUT
+          echo "debian_arch=$DEBIAN_ARCH" >> $GITHUB_OUTPUT
+          echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
+          echo "base_image=$BASE_IMAGE" >> $GITHUB_OUTPUT
+          
+          echo "Architecture: $BASE_ARCH (debian: $DEBIAN_ARCH, platform: $PLATFORM)"
+          echo "Base image: $BASE_IMAGE"
+          echo "Horizon tag: $FULL_TAG"
+
+      - name: Set up Docker Buildx (for multi-arch)
+        if: inputs.base_arch == 'aarch64'
+        uses: docker/setup-buildx-action@v3
+
       - name: Create Horizon plugins template
         run: |
           cat > horizon-plugins.j2 << 'EOF'
           {% extends parent_template %}
           
           {% block horizon_footer %}
-          ENV ENABLE_BLAZAR=yes \
+          # 启用所有 Horizon 插件
+          ENV ENABLE_AODH=yes \
+              ENABLE_BARBICAN=yes \
+              ENABLE_BLAZAR=yes \
+              ENABLE_CEILOMETER=yes \
               ENABLE_CLOUDKITTY=yes \
+              ENABLE_CYBORG=yes \
               ENABLE_DESIGNATE=yes \
               ENABLE_FWAAS=yes \
+              ENABLE_GNOCCHI=yes \
               ENABLE_HEAT=yes \
               ENABLE_IRONIC=yes \
               ENABLE_MAGNUM=yes \
@@ -68,7 +225,10 @@ jobs:
               ENABLE_MASAKARI=yes \
               ENABLE_MISTRAL=yes \
               ENABLE_NEUTRON_VPNAAS=yes \
+              ENABLE_NEUTRON_TAAS=yes \
               ENABLE_OCTAVIA=yes \
+              ENABLE_SAHARA=yes \
+              ENABLE_SKYLINE=yes \
               ENABLE_TACKER=yes \
               ENABLE_TROVE=yes \
               ENABLE_VENUS=yes \
@@ -79,23 +239,43 @@ jobs:
 
       - name: Build Horizon with all plugins
         run: |
-          echo "Building Horizon with all plugins enabled"
+          echo "Building Horizon with ALL plugins enabled"
+          echo "Base: ${{ inputs.base_distro || 'ubuntu' }}"
+          echo "Version: ${{ inputs.base_version || 'noble' }}"
+          echo "Architecture: ${{ steps.vars.outputs.base_arch }}"
+          echo "OpenStack Release: ${{ inputs.release || '2025.1' }}"
+          echo "Tag: ${{ steps.vars.outputs.full_tag }}"
+          echo "Platform: ${{ steps.vars.outputs.platform }}"
+          
+          # 构建参数
+          BUILD_ARGS=""
+          if [ "${{ steps.vars.outputs.base_arch }}" = "aarch64" ]; then
+            BUILD_ARGS="--platform ${{ steps.vars.outputs.platform }} --base-arch aarch64"
+          fi
           
           kolla-build \
             --base ${{ inputs.base_distro || 'ubuntu' }} \
             --namespace ${{ env.REGISTRY }}/${{ env.OWNER }} \
+            --tag ${{ steps.vars.outputs.full_tag }} \
             --template-override horizon-plugins.j2 \
             --retries 3 \
+            $BUILD_ARGS \
             horizon
 
       - name: Test Horizon image
         if: success()
         run: |
           echo "Testing Horizon image..."
-          HORIZON_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep horizon | head -1)
-          if [ -n "$HORIZON_IMAGE" ]; then
+          HORIZON_TAG="${{ steps.vars.outputs.full_tag }}"
+          HORIZON_IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/horizon:$HORIZON_TAG"
+          
+          if docker images | grep -q "$HORIZON_IMAGE"; then
             echo "Found: $HORIZON_IMAGE"
             docker run --rm "$HORIZON_IMAGE" python3 -c "import openstack_dashboard; print('Horizon OK')"
+          else
+            echo "Horizon image not found with expected tag: $HORIZON_TAG"
+            echo "Available images:"
+            docker images | grep horizon || echo "No horizon images found"
           fi
 
       - name: Login to Container Registry
