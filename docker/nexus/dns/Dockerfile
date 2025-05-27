@@ -1,7 +1,7 @@
-FROM alpine:3.18
+FROM alpine:latest
 
-LABEL org.opencontainers.image.source="https://github.com/fivetime/nexus"
-LABEL org.opencontainers.image.description="Nexus DNS - Dynamic DNS proxy with service discovery"
+LABEL org.opencontainers.image.source="https://github.com/openstack"
+LABEL org.opencontainers.image.description="Nexus DNS"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # Install dnsmasq and tools
@@ -15,7 +15,7 @@ RUN apk add --no-cache \
     bash
 
 # Install kubectl
-ARG KUBECTL_VERSION=v1.28.0
+ARG KUBECTL_VERSION=v1.33.0
 RUN curl -L -o /usr/local/bin/kubectl \
     "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
     && chmod +x /usr/local/bin/kubectl

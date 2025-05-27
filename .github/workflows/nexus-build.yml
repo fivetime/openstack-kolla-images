@@ -16,7 +16,7 @@ on:
       kubectl_version:
         description: 'kubectl version'
         required: false
-        default: 'v1.28.0'
+        default: 'v1.33.0'
 
 env:
   REGISTRY: ghcr.io
@@ -48,12 +48,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}  # 修正：添加 OWNER
+          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix={{branch}}-
+            type=raw,value={{branch}},enable=${{ github.ref_name != 'main' && github.ref_name != 'master' }}
+            type=raw,value=dev,enable=${{ github.event_name == 'pull_request' }}
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -63,13 +62,13 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            KUBECTL_VERSION=${{ inputs.kubectl_version || 'v1.28.0' }}
+            KUBECTL_VERSION=${{ inputs.kubectl_version || 'v1.33.0' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Test image
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}"  # 修正：添加 OWNER
+          IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}"
           TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
           
           echo "Testing $TAG"

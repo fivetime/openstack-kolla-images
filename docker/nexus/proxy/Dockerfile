@@ -1,7 +1,7 @@
-FROM nginx:1.25-alpine
+FROM nginx:1.28-alpine
 
-LABEL org.opencontainers.image.source="https://github.com/fivetime/nexus"
-LABEL org.opencontainers.image.description="Nexus Proxy - Dynamic OpenStack API proxy"
+LABEL org.opencontainers.image.source="https://github.com/openstack"
+LABEL org.opencontainers.image.description="Nexus Proxy"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # Install required tools
@@ -14,7 +14,7 @@ RUN apk add --no-cache \
     bash
 
 # Install kubectl
-ARG KUBECTL_VERSION=v1.28.0
+ARG KUBECTL_VERSION=v1.33.0
 RUN curl -L -o /usr/local/bin/kubectl \
     "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
     && chmod +x /usr/local/bin/kubectl
