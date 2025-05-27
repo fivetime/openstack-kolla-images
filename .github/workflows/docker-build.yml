@@ -1,20 +1,14 @@
-name: Build Images By Matrix
+name: Build Kolla OpenStack Images
 
 on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
     inputs:
-      build_scope:
-        description: 'Which services to build'
-        required: false
-        default: 'core'
-        type: choice
-        options:
-          - core
-          - infra
-          - all
-          - custom
-      custom_services:
-        description: 'Custom services (comma-separated, only if scope=custom)'
+      build_target:
+        description: 'What to build (leave empty for all services)'
         required: false
         default: ''
         type: string
@@ -44,134 +38,118 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  OWNER: ${{ github.repository_owner }}
-  ALL_SERVICES: |
-    [
-      "keystone", "glance", "nova", "neutron", "cinder", "placement", "heat", "horizon", 
-      "aodh", "barbican", "blazar", "ceilometer", "cloudkitty", "cyborg", "designate", 
-      "gnocchi", "ironic", "ironic-inspector", "magnum", "manila", "masakari", "mistral", 
-      "octavia", "tacker", "trove", "venus", "watcher", "zun", "cron", "etcd", "fluentd",
-      "haproxy", "hacluster", "keepalived", "kolla-toolbox", "letsencrypt", "mariadb", 
-      "memcached", "opensearch", "openvswitch", "ovn", "ovsdpdk", "proxysql", "rabbitmq", 
-      "redis", "tgtd", "collectd", "dnsmasq", "grafana", "influxdb", "iscsid", "multipathd",
-      "networking-baremetal", "prometheus", "skyline", "telegraf", "bifrost", "kuryr"
-    ]
+  OWNER: fivetime
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      services: ${{ steps.set-matrix.outputs.services }}
-      tag: ${{ steps.set-matrix.outputs.tag }}
-    steps:
-      - name: Set matrix
-        id: set-matrix
-        run: |
-          case "${{ github.event.inputs.base_distro || 'ubuntu' }}" in
-            ubuntu) DISTRO_TAG="ubuntu_noble" ;;
-            rocky) DISTRO_TAG="rocky_9" ;;
-            debian) DISTRO_TAG="debian_bookworm" ;;
-            *) DISTRO_TAG="ubuntu_noble" ;;
-          esac
-          FULL_TAG="${{ github.event.inputs.openstack_release || '2024.2' }}-${DISTRO_TAG}"
-          echo "tag=$FULL_TAG" >> $GITHUB_OUTPUT
-
-          ALL_SERVICES='${{ env.ALL_SERVICES }}'
-          SCOPE="${{ github.event.inputs.build_scope || 'core' }}"
-          case "$SCOPE" in
-            core)
-              SERVICES=$(echo "$ALL_SERVICES" | jq '.[0:29]')
-              ;;
-            infra)
-              SERVICES=$(echo "$ALL_SERVICES" | jq '.[29:]')
-              ;;
-            all)
-              SERVICES=$ALL_SERVICES
-              ;;
-            custom)
-              if [ -n "${{ github.event.inputs.custom_services }}" ]; then
-                CUSTOM=$(echo "${{ github.event.inputs.custom_services }}" | awk -F, '{for(i=1;i<=NF;i++) {gsub(/^ +| +$/,"",$i); print "\""$i"\""}' | paste -sd, - | sed 's/^/[/;s/$/]/')
-                SERVICES=$CUSTOM
-              else
-                SERVICES=$(echo "$ALL_SERVICES" | jq '.[0:29]')
-              fi
-              ;;
-            *)
-              SERVICES=$(echo "$ALL_SERVICES" | jq '.[0:29]')
-              ;;
-          esac
-          echo "services=$SERVICES" >> $GITHUB_OUTPUT
-
   build:
-    needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        service: ${{ fromJson(needs.prepare.outputs.services) }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Kolla
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install kolla docker
+
+      - name: Set build variables
+        id: vars
+        run: |
+          # 设置所有服务列表
+          ALL_SERVICES="keystone glance nova neutron cinder placement heat horizon aodh barbican blazar ceilometer cloudkitty cyborg designate gnocchi ironic ironic-inspector magnum manila masakari mistral octavia tacker trove venus watcher zun cron etcd fluentd haproxy hacluster keepalived kolla-toolbox letsencrypt mariadb memcached opensearch openvswitch ovn ovsdpdk proxysql rabbitmq redis tgtd collectd dnsmasq grafana influxdb iscsid multipathd networking-baremetal prometheus skyline telegraf bifrost kuryr"
+          
+          # 确定要构建的服务
+          if [ -z "${{ inputs.build_target }}" ]; then
+            BUILD_SERVICES="$ALL_SERVICES"
+            echo "Building all services"
+          else
+            BUILD_SERVICES="${{ inputs.build_target }}"
+            echo "Building specified services: $BUILD_SERVICES"
+          fi
+          
+          # 生成标签（格式：版本-系统_代号）
+          BASE_DISTRO="${{ inputs.base_distro || 'ubuntu' }}"
+          RELEASE="${{ inputs.openstack_release || '2024.2' }}"
+          
+          case "$BASE_DISTRO" in
+            ubuntu)
+              OS_TAG="ubuntu_noble"  # Ubuntu 24.04 Noble
+              ;;
+            debian)
+              OS_TAG="debian_bookworm"  # Debian 12 Bookworm
+              ;;
+            rocky)
+              OS_TAG="rocky_9"  # Rocky Linux 9
+              ;;
+            *)
+              OS_TAG="ubuntu_noble"
+              ;;
+          esac
+          
+          FULL_TAG="${RELEASE}-${OS_TAG}"
+          
+          echo "build_services=$BUILD_SERVICES" >> $GITHUB_OUTPUT
+          echo "full_tag=$FULL_TAG" >> $GITHUB_OUTPUT
+          echo "os_tag=$OS_TAG" >> $GITHUB_OUTPUT
+          
+          echo "Final tag will be: $FULL_TAG"
+      - name: Build Kolla images
+        run: |
+          echo "Building services: ${{ steps.vars.outputs.build_services }}"
+          echo "Base: ${{ inputs.base_distro || 'ubuntu' }}"
+          echo "OpenStack Release: ${{ inputs.openstack_release || '2024.2' }}"
+          echo "Tag: ${{ steps.vars.outputs.full_tag }}"
+          
+          kolla-build \
+            --base ${{ inputs.base_distro || 'ubuntu' }} \
+            --namespace ${{ env.REGISTRY }}/${{ env.OWNER }} \
+            --tag ${{ steps.vars.outputs.full_tag }} \
+            --retries 3 \
+            ${{ steps.vars.outputs.build_services }}
+
+      - name: List built images
+        if: success()
+        run: |
+          echo "Built images with tag: ${{ steps.vars.outputs.full_tag }}"
+          docker images | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" | grep ${{ steps.vars.outputs.full_tag }} || echo "No images found with expected tag"
+          echo ""
+          echo "All images:"
+          docker images | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" || echo "No images found"
+
       - name: Login to Container Registry
-        if: ${{ github.event.inputs.push_images == 'true' || github.event_name == 'push' }}
+        if: success() && (github.event_name == 'push' || inputs.push_images == true)
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.CR_PAT }}
-      - name: Install Kolla
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip python3-dev build-essential libffi-dev
-          python3 -m pip install --upgrade pip
-          python3 -m pip install kolla docker
-      - name: Build image
-        run: |
-          echo "Building: ${{ matrix.service }}"
-          kolla-build \
-            --base ${{ github.event.inputs.base_distro || 'ubuntu' }} \
-            --namespace ${{ env.REGISTRY }}/${{ env.OWNER }} \
-            --tag ${{ needs.prepare.outputs.tag }} \
-            --retries 3 \
-            --pull \
-            ${{ matrix.service }}
-      - name: Test image
-        run: |
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.service }}:${{ needs.prepare.outputs.tag }}"
-          if docker images | grep -q "${{ matrix.service }}"; then
-            echo "✅ Image ${{ matrix.service }} built successfully"
-          else
-            echo "❌ Image ${{ matrix.service }} not found" && exit 1
-          fi
-      - name: Push image
-        if: ${{ github.event.inputs.push_images == 'true' || github.event_name == 'push' }}
-        run: |
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.service }}:${{ needs.prepare.outputs.tag }}"
-          docker push "$IMAGE_NAME"
-          echo "✅ ${{ matrix.service }} pushed successfully"
 
-  summary:
-    needs: [prepare, build]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Build Summary
+      - name: Push images
+        if: success() && (github.event_name == 'push' || inputs.push_images == true)
         run: |
-          echo "=== Build Summary ==="
-          echo "OpenStack Release: ${{ github.event.inputs.openstack_release || '2024.2' }}"
-          echo "Base Distribution: ${{ github.event.inputs.base_distro || 'ubuntu' }}"
-          echo "Tag Format: ${{ needs.prepare.outputs.tag }}"
-          echo "Build Scope: ${{ github.event.inputs.build_scope || 'core' }}"
-          echo "Push Images: ${{ github.event.inputs.push_images || true }}"
-          echo ""
-          echo "Services built:"
-          echo '${{ needs.prepare.outputs.services }}' | jq -r '.[]' | sed 's/^/  - /'
-          echo ""
-          if [ "${{ needs.build.result }}" == "success" ]; then
-            echo "🎉 All builds completed successfully!"
-          else
-            echo "⚠️ Some builds may have failed. Check individual job logs."
-          fi
+          echo "Pushing images..."
+          
+          # 为镜像重新打标签，确保格式正确
+          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.OWNER }}" | grep -v "<none>"); do
+            if [[ "$image" == *"${{ env.REGISTRY }}/${{ env.OWNER }}"* ]]; then
+              echo "Image already has correct registry prefix: $image"
+              echo "Pushing: $image"
+              docker push "$image"
+            else
+              # 重新打标签
+              new_tag="${{ env.REGISTRY }}/$image"
+              echo "Retagging $image -> $new_tag"
+              docker tag "$image" "$new_tag"
+              echo "Pushing: $new_tag"
+              docker push "$new_tag"
+            fi
+          done
