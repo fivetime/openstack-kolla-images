@@ -1,4 +1,4 @@
-name: Cleanup Kolla Images
+name: Cleanup Packages
 
 on:
   workflow_dispatch:  # 手动触发工作流
@@ -27,7 +27,7 @@ jobs:
           {
             "token": "${{ secrets.CR_PAT }}",
             "username": "${{ github.repository_owner }}",
-            "is_org": false,
+            "is_org": true,
             "packages": [
               "keystone", "glance", "nova", "neutron", "cinder", "placement", "heat",
               "horizon", "aodh", "barbican", "blazar", "ceilometer", "cloudkitty",
