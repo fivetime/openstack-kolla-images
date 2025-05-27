@@ -89,7 +89,7 @@ jobs:
             "letsencrypt" "mariadb" "memcached" "opensearch" "openvswitch" "ovn" "ovsdpdk" 
             "proxysql" "rabbitmq" "redis" "tgtd" "collectd" "dnsmasq" "grafana" "influxdb" 
             "iscsid" "multipathd" "networking-baremetal" "prometheus" "skyline" "telegraf" 
-            "bifrost" "kuryr"
+            "bifrost" "kuryr" "nexus"
           )
           
           # 合并所有服务
