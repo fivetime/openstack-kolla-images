@@ -1,4 +1,4 @@
-name: Cleanup Packages
+name: Cleanup Kolla Images
 
 on:
   workflow_dispatch:  # 手动触发工作流
@@ -44,6 +44,7 @@ jobs:
           EOF
 
       - name: Run cleanup script
+        id: cleanup-script
         run: |
           cd tools
           python cleanup-github.py
@@ -52,3 +53,11 @@ jobs:
         if: always()
         run: |
           rm -f tools/github.json
+
+      - name: Check cleanup result
+        if: always()
+        run: |
+          if [ "${{ steps.cleanup-script.outcome }}" != "success" ]; then
+            echo "清理脚本执行失败！"
+            exit 1
+          fi
