@@ -20,7 +20,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/nexus
+  IMAGE_PREFIX: nexus
+  OWNER: ${{ github.repository_owner }}
 
 jobs:
   build:
@@ -41,13 +42,13 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.CR_PAT }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}
+          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}  # 修正：添加 OWNER
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -68,7 +69,7 @@ jobs:
 
       - name: Test image
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}"  # 修正：添加 OWNER
           TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
           
           echo "Testing $TAG"
@@ -101,5 +102,5 @@ jobs:
           echo "| nexus-dns | ${{ needs.build.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Images available at:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-proxy:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-dns:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${{ env.OWNER }}/${{ env.IMAGE_PREFIX }}-proxy:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${{ env.OWNER }}/${{ env.IMAGE_PREFIX }}-dns:latest\`" >> $GITHUB_STEP_SUMMARY
