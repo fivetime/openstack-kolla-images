@@ -59,7 +59,7 @@ on:
         type: boolean
 
 env:
-  REGISTRY: ${{ env.REGISTRY }}
+  REGISTRY: ghcr.io
   OWNER: ${{ github.repository_owner }}
 
 jobs:
