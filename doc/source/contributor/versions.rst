@@ -23,11 +23,11 @@ information about package sources.
  Galera         26.4 (LTS)         `MariaDB Community downloads`_
  OpenSearch     3.x                `OpenSearch install guide`_
  ProxySQL       2.7.x              `ProxySQL repository`_
- Rabbitmq       4.0.x              - CentOS/Rocky:
+ Rabbitmq       4.1.x              - CentOS/Rocky:
                                      `Team RabbitMQ 'Cloudsmith' repo (RPM)`_
                                    - Debian/Ubuntu:
                                      `Team RabbitMQ 'Cloudsmith' repo (Deb)`_
- Erlang         26.2.X             - CentOS/Rocky aarch64:
+ Erlang         27.X               - CentOS/Rocky aarch64:
                                      `openstack-kolla COPR`_
                                    - CentOS/Rocky x86-64:
                                      `Team RabbitMQ 'Cloudsmith' repo (RPM)`_
@@ -47,7 +47,7 @@ information about package sources.
 .. _`Team RabbitMQ 'Cloudsmith' repo (Deb)`: https://www.rabbitmq.com/install-debian.html#apt-cloudsmith
 .. _`Team RabbitMQ 'Modern Erlang' PPA`: https://launchpad.net/~rabbitmq/+archive/ubuntu/rabbitmq-erlang
 .. _`Team RabbitMQ 'Cloudsmith' repo (RPM)`: https://www.rabbitmq.com/docs/install-rpm#cloudsmith
-.. _`openstack-kolla COPR`: https://copr.fedorainfracloud.org/coprs/g/openstack-kolla/rabbitmq-erlang/
+.. _`openstack-kolla COPR`: https://copr.fedorainfracloud.org/coprs/g/openstack-kolla/rabbitmq-erlang-27/
 
 .. _`Grafana install guide`: https://grafana.com/grafana/download?platform=linux&edition=oss
 .. _`MariaDB Community downloads`: https://mariadb.com/downloads/community/

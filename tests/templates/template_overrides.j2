@@ -18,21 +18,7 @@ RUN echo registry={{ nodepool_npmjs_proxy }} > /etc/npmrc \
 {% endblock %}
 {% endraw %}
 
-{% if base_distro in ['centos', 'rocky'] %}
-    {% if base_distro == 'centos' %}
-
-{% raw %}
-{% block base_centos_repo_overrides_post_copy %}
-{% endraw %}
-
-COPY ci-centos.repo /etc/yum.repos.d/
-RUN cd /etc/yum.repos.d/ && mkdir not-for-ci/ && mv centos*.repo not-for-ci/ \
-    && sed -i -e "s/MIRROR/{{ nodepool_mirror_host }}/g" /etc/yum.repos.d/ci-centos.repo
-
-{% raw %}
-{% endblock %}
-{% endraw %}
-    {% elif base_distro == 'rocky' %}
+{% if base_distro == 'rocky' %}
 {#
 NOTE(hrw): Rocky is not mirrored but it uses CentOS repos which are
  #}
@@ -47,18 +33,8 @@ RUN cd /etc/yum.repos.d/ && mkdir not-for-ci/ \
 {% raw %}
 {% endblock %}
 {% endraw %}
-    {% endif %} {# if centos/rocky #}
 
 {% raw %}
-{% block base_centos_repo_overrides_post_rpm %}
-{% endraw %}
-
-RUN sed -i \
-        -e "s|https://trunk.rdoproject.org|{{ nodepool_rdo_proxy }}|g" \
-        /etc/yum.repos.d/delorean*.repo
-
-{% raw %}
-{% endblock %}
 
 {% block base_centos_repo_overrides_post_yum -%}
 {%- endraw -%}
@@ -81,6 +57,7 @@ RUN sed -i -e "s|http://deb.debian.org|[trusted=yes] http://{{ nodepool_mirror_h
 
 RUN sed -i -e "s|mirror://mirrors.ubuntu.com/mirrors.txt|[trusted=yes] http://{{ nodepool_mirror_host }}/ubuntu/|" \
         -e "s|http://ports.ubuntu.com|[trusted=yes] http://{{ nodepool_mirror_host }}/ubuntu-ports|" \
+        -e "s|http://ubuntu-cloud.archive.canonical.com/ubuntu|[trusted=yes] http://{{ nodepool_mirror_host }}/ubuntu-cloud-archive|" \
         /etc/apt/sources.list
 
 {% endif %}
@@ -113,10 +90,7 @@ RUN if [ -d /etc/yum.repos.d/not-for-ci/ ]; then \
         rm ci-{{ base_distro }}.repo && \
         mv not-for-ci/*.repo . && \
         rm -rf not-for-ci; \
-    fi; \
-    sed -i \
-        -e "s|{{ nodepool_rdo_proxy }}|https://trunk.rdoproject.org|g" \
-        /etc/yum.repos.d/delorean*.repo
+    fi;
 {% elif base_distro == "debian" %}
 RUN sed -i -e "s|\[trusted=yes\] http://{{ nodepool_mirror_host }}|http://deb.debian.org|" \
         -e "s|\[trusted=yes\] http://{{ nodepool_mirror_host }}|http://security.debian.org|" \

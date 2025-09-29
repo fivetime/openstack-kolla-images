@@ -7,7 +7,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
 
 {% import "macros.j2" as macros with context %}
 
-{{ macros.enable_extra_repos(['crb']) }}
+{{ macros.enable_extra_repos(['crb', 'epel']) }}
 
 {% if base_package_type == 'rpm' %}
     {% set openstack_base_packages = [
@@ -24,9 +24,10 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
         'mod_ssl',
         'openssl',
         'openssl-devel',
-        'pcre-devel',
+        'pcre2-devel',
         'postgresql',
         'postgresql-devel',
+        'postgresql-server-devel',
         'python3-devel',
         'python3-mod_wsgi',
         'sqlite-devel',
