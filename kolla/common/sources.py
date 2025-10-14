@@ -123,10 +123,10 @@ SOURCES = {
         'type': 'url',
         'location': ('$tarballs_base/openstack/neutron-vpnaas-dashboard/'
                      'neutron-vpnaas-dashboard-${openstack_branch}.tar.gz')},
-    'horizon-plugin-bgpvpn-dashboard': {
+    'horizon-plugin-networking-bgpvpn': {
         'type': 'url',
-        'location': ('$tarballs_base/openstack/bgpvpn-dashboard/'
-                     'bgpvpn-dashboard-${openstack_branch}.tar.gz')},
+        'location': ('$tarballs_base/openstack/networking-bgpvpn/'
+                     'networking-bgpvpn-${openstack_branch}.tar.gz')},
     'horizon-plugin-octavia-dashboard': {
         'type': 'url',
         'location': ('$tarballs_base/openstack/octavia-dashboard/'
