@@ -1,4 +1,4 @@
-name: Build OpenStack Images From Source
+name: Build All From Source
 
 on:
   workflow_dispatch:
