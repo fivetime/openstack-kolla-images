@@ -1,4 +1,4 @@
-name: Build Images By Matrix
+name: Build Images From Source
 
 on:
   workflow_dispatch:
@@ -75,19 +75,23 @@ jobs:
           if [ -n "${{ github.event.inputs.service }}" ]; then
             echo "matrix=[\"${{ github.event.inputs.service }}\"]" >> $GITHUB_OUTPUT
           else
-            echo 'matrix=[
-              "base","openstack-base","keystone","glance","nova","neutron",
-              "cinder","placement","horizon","heat","aodh","barbican",
-              "bifrost","blazar","ceilometer","cloudkitty","cyborg",
-              "designate","gnocchi","ironic","ironic-inspector","kuryr",
-              "magnum","manila","masakari","mistral","networking-baremetal",
-              "octavia","skyline-apiserver","skyline-console","tacker",
-              "trove","venus","watcher","zun","kolla-toolbox","mariadb",
-              "rabbitmq","memcached","haproxy","keepalived","etcd",
-              "fluentd","opensearch","openvswitch","ovn","redis",
-              "proxysql","cron","collectd","dnsmasq","grafana",
-              "influxdb","iscsid","multipathd","prometheus","telegraf"
-            ]' >> $GITHUB_OUTPUT
+            # 分类定义服务
+            CORE_SERVICES='base openstack-base keystone glance nova neutron cinder placement horizon heat'
+          
+            OPENSTACK_SERVICES='aodh barbican blazar ceilometer cloudkitty cyborg designate gnocchi kuryr magnum manila masakari mistral octavia skyline-apiserver skyline-console tacker trove venus watcher zun'
+          
+            BAREMETAL_SERVICES='bifrost ironic ironic-inspector networking-baremetal'
+          
+            INFRA_SERVICES='kolla-toolbox mariadb rabbitmq memcached haproxy keepalived etcd fluentd opensearch openvswitch ovn redis proxysql cron collectd dnsmasq grafana influxdb iscsid multipathd prometheus telegraf'
+          
+            # 合并所有服务
+            ALL_SERVICES="$CORE_SERVICES $OPENSTACK_SERVICES $BAREMETAL_SERVICES $INFRA_SERVICES"
+          
+            # 转换为 JSON 数组格式
+            JSON_ARRAY=$(echo $ALL_SERVICES | tr ' ' '\n' | jq -R . | jq -s -c .)
+          
+            echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
+            echo "Building services: Core + OpenStack + Baremetal + Infrastructure"
           fi
 
       - id: set-registry
