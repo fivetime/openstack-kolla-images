@@ -71,6 +71,64 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install kolla docker
 
+      - name: Create kolla-build.conf
+        run: |
+          sudo mkdir -p /etc/kolla
+          RELEASE="${{ inputs.release || '2025.2' }}"
+          
+          # 计算分支名称
+          if [ "$RELEASE" = "master" ]; then
+            BRANCH="master"
+          else
+            BRANCH="stable/${RELEASE}"
+          fi
+          
+          echo "OpenStack Release: $RELEASE"
+          echo "Branch: $BRANCH"
+          
+          cat << EOF | sudo tee /etc/kolla/kolla-build.conf
+          [DEFAULT]
+          # 基本配置会通过命令行参数传递
+          
+          # 自动计算的分支变量:
+          # Release: $RELEASE
+          # Branch:  $BRANCH
+          
+          # 自定义源码仓库配置 (如需修改，在这里更改)
+          
+          # 示例1: 使用 git 仓库 (自定义分支)
+          # [neutron-base]
+          # type = git
+          # location = https://github.com/yourname/neutron
+          # reference = custom-branch
+          
+          # 示例2: 使用官方 git 仓库 (自动使用对应版本分支)
+          [neutron-base]
+          type = git
+          location = https://opendev.org/openstack/neutron
+          reference = $BRANCH
+          
+          # 示例3: neutron 插件 (url 类型,自动使用对应版本)
+          [neutron-server-plugin-networking-bgpvpn]
+          type = url
+          location = https://tarballs.opendev.org/openstack/networking-bgpvpn/networking-bgpvpn-$BRANCH.tar.gz
+          enabled = true
+          
+          # 其他服务可以在此添加自定义配置
+          # [keystone-base]
+          # type = git
+          # location = https://github.com/yourname/keystone
+          # reference = my-feature-branch
+          
+          # [glance-base]
+          # type = git
+          # location = https://gitee.com/yourname/glance
+          # reference = main
+          EOF
+          
+          echo "Generated kolla-build.conf:"
+          cat /etc/kolla/kolla-build.conf
+
       - name: Set build variables
         id: vars
         run: |
@@ -200,6 +258,7 @@ jobs:
             --base ${{ inputs.base_distro || 'ubuntu' }} \
             --namespace ${{ env.REGISTRY }}/${{ env.OWNER }} \
             --tag ${{ steps.vars.outputs.full_tag }} \
+            --config-file /etc/kolla/kolla-build.conf \
             --retries 3 \
             $BUILD_ARGS \
             ${{ steps.vars.outputs.build_services }}
