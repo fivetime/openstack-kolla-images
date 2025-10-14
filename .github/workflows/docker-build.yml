@@ -189,7 +189,7 @@ jobs:
           
           INFRA_SERVICES=(
             "cron" "etcd" "fluentd" "haproxy" "hacluster" "keepalived" 
-            "kolla-toolbox" "letsencrypt" "mariadb" "memcached" "nexus" "opensearch" 
+            "kolla-toolbox" "letsencrypt" "mariadb" "memcached" "opensearch" 
             "openvswitch" "ovn" "ovsdpdk" "proxysql" "rabbitmq" "redis" "collectd" 
             "dnsmasq" "grafana" "influxdb" "iscsid" "multipathd" 
             "prometheus" "telegraf" "tgtd"
