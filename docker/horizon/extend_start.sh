@@ -149,6 +149,14 @@ function config_neutron_vpnaas_dashboard {
         "${SITE_PACKAGES}/openstack_dashboard/local/enabled/_7100_project_vpn_panel.py"
 }
 
+function config_bgpvpn_dashboard {
+    for file in ${SITE_PACKAGES}/bgpvpn_dashboard/enabled/_*[^__].py; do
+        config_dashboard "${ENABLE_BGPVPN:-no}" \
+            "${SITE_PACKAGES}/bgpvpn_dashboard/enabled/${file##*/}" \
+            "${SITE_PACKAGES}/openstack_dashboard/local/enabled/${file##*/}"
+    done
+}
+
 function config_octavia_dashboard {
     config_dashboard "${ENABLE_OCTAVIA:-no}" \
         "${SITE_PACKAGES}/octavia_dashboard/enabled/_1482_project_load_balancer_panel.py" \
@@ -222,6 +230,7 @@ function settings_changed {
     return ${changed}
 }
 
+config_bgpvpn_dashboard
 config_blazar_dashboard
 config_cloudkitty_dashboard
 config_designate_dashboard
