@@ -33,11 +33,12 @@ on:
       release:
         description: 'Release version'
         required: false
-        default: '2025.1'
+        default: '2025.2'
         type: choice
         options:
           - '2024.2'
           - '2025.1'
+          - '2025.2'
           - 'master'
       push_images:
         description: 'Push images to registry'
@@ -63,7 +64,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install Kolla
         run: |
@@ -73,23 +74,25 @@ jobs:
       - name: Set build variables
         id: vars
         run: |
-          # 设置所有服务列表（分类清晰）
+          # 设置所有服务列表(分类清晰)
           CORE_SERVICES=(
-            "keystone" "glance" "nova" "neutron" "cinder" "placement" "heat" "horizon"
+            "base" "openstack-base" "keystone" "glance" "nova" "neutron" 
+            "cinder" "placement" "heat" "horizon"
           )
           
           OPENSTACK_SERVICES=(
-            "aodh" "barbican" "blazar" "ceilometer" "cloudkitty" "cyborg" "designate" 
-            "gnocchi" "ironic" "ironic-inspector" "magnum" "manila" "masakari" "mistral" 
-            "octavia" "tacker" "trove" "venus" "watcher" "zun"
+            "aodh" "barbican" "bifrost" "blazar" "ceilometer" "cloudkitty" 
+            "cyborg" "designate" "gnocchi" "ironic" "ironic-inspector" "kuryr" 
+            "magnum" "manila" "masakari" "mistral" "networking-baremetal" "octavia" 
+            "skyline-apiserver" "skyline-console" "tacker" "trove" "venus" "watcher" "zun"
           )
           
           INFRA_SERVICES=(
-            "cron" "etcd" "fluentd" "haproxy" "hacluster" "keepalived" "kolla-toolbox" 
-            "letsencrypt" "mariadb" "memcached" "opensearch" "openvswitch" "ovn" "ovsdpdk" 
-            "proxysql" "rabbitmq" "redis" "tgtd" "collectd" "dnsmasq" "grafana" "influxdb" 
-            "iscsid" "multipathd" "networking-baremetal" "prometheus" "skyline" "telegraf" 
-            "bifrost" "kuryr" "nexus"
+            "cron" "etcd" "fluentd" "haproxy" "hacluster" "keepalived" 
+            "kolla-toolbox" "letsencrypt" "mariadb" "memcached" "nexus" "opensearch" 
+            "openvswitch" "ovn" "ovsdpdk" "proxysql" "rabbitmq" "redis" "collectd" 
+            "dnsmasq" "grafana" "influxdb" "iscsid" "multipathd" 
+            "prometheus" "telegraf" "tgtd"
           )
           
           # 合并所有服务
@@ -107,10 +110,10 @@ jobs:
             echo "Building specified services: $BUILD_SERVICES"
           fi
           
-          # 生成标签（官方格式：版本-系统_代号-架构）
+          # 生成标签(官方格式:版本-系统_代号-架构)
           BASE_DISTRO="${{ inputs.base_distro || 'ubuntu' }}"
           BASE_ARCH="${{ inputs.base_arch || 'x86_64' }}"
-          RELEASE="${{ inputs.release || '2025.1' }}"
+          RELEASE="${{ inputs.release || '2025.2' }}"
           
           # 根据官方配置设置标签
           case "$BASE_DISTRO" in
@@ -173,6 +176,7 @@ jobs:
           echo "Architecture: $BASE_ARCH (debian: $DEBIAN_ARCH, platform: $PLATFORM)"
           echo "Base image: $BASE_IMAGE"
           echo "Final tag: $FULL_TAG"
+
       - name: Set up Docker Buildx (for multi-arch)
         if: inputs.base_arch == 'aarch64'
         uses: docker/setup-buildx-action@v3
@@ -182,7 +186,7 @@ jobs:
           echo "Building services: ${{ steps.vars.outputs.build_services }}"
           echo "Base: ${{ inputs.base_distro || 'ubuntu' }}"
           echo "Architecture: ${{ steps.vars.outputs.base_arch }}"
-          echo "OpenStack Release: ${{ inputs.release || '2025.1' }}"
+          echo "OpenStack Release: ${{ inputs.release || '2025.2' }}"
           echo "Tag: ${{ steps.vars.outputs.full_tag }}"
           echo "Platform: ${{ steps.vars.outputs.platform }}"
           
@@ -222,7 +226,7 @@ jobs:
         run: |
           echo "Pushing images..."
           
-          # 为镜像重新打标签，确保格式正确
+          # 为镜像重新打标签,确保格式正确
           for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.OWNER }}" | grep -v "<none>"); do
             if [[ "$image" == *"${{ env.REGISTRY }}/${{ env.OWNER }}"* ]]; then
               echo "Image already has correct registry prefix: $image"
