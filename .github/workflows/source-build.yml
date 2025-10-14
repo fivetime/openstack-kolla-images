@@ -271,7 +271,7 @@ jobs:
           reference = ${BRANCH}
           
           # Neutron 插件
-          [neutron-base-plugin-networking-bgpvpn]
+          [neutron-server-plugin-networking-bgpvpn]
           type = url
           location = https://tarballs.opendev.org/openstack/networking-bgpvpn/networking-bgpvpn-${BRANCH}.tar.gz
           enabled = true
