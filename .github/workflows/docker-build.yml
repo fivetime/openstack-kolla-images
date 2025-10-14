@@ -45,6 +45,24 @@ on:
         required: false
         default: true
         type: boolean
+      registry_type:
+        description: 'Registry type'
+        required: false
+        default: 'ghcr'
+        type: choice
+        options:
+          - ghcr
+          - harbor
+      harbor_url:
+        description: 'Harbor registry URL (e.g., harbor.example.com)'
+        required: false
+        default: 'harbor.example.com'
+        type: string
+      harbor_project:
+        description: 'Harbor project name (e.g., openstack)'
+        required: false
+        default: 'openstack'
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -132,6 +150,30 @@ jobs:
       - name: Set build variables
         id: vars
         run: |
+          # 确定 Registry 和 Namespace
+          REGISTRY_TYPE="${{ inputs.registry_type || 'ghcr' }}"
+          
+          if [ "$REGISTRY_TYPE" = "harbor" ]; then
+            HARBOR_URL="${{ inputs.harbor_url }}"
+            HARBOR_PROJECT="${{ inputs.harbor_project || 'openstack' }}"
+          
+            if [ -z "$HARBOR_URL" ]; then
+              echo "Error: harbor_url is required when registry_type is harbor"
+              exit 1
+            fi
+          
+            REGISTRY="$HARBOR_URL"
+            NAMESPACE="$HARBOR_PROJECT"
+            echo "Using Harbor registry: $REGISTRY/$NAMESPACE"
+          else
+            REGISTRY="ghcr.io"
+            NAMESPACE="${{ github.repository_owner }}"
+            echo "Using GitHub Container Registry: $REGISTRY/$NAMESPACE"
+          fi
+          
+          echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
+          echo "namespace=$NAMESPACE" >> $GITHUB_OUTPUT
+          
           # 设置所有服务列表(分类清晰)
           CORE_SERVICES=(
             "base" "openstack-base" "keystone" "glance" "nova" "neutron" 
@@ -247,6 +289,8 @@ jobs:
           echo "OpenStack Release: ${{ inputs.release || '2025.2' }}"
           echo "Tag: ${{ steps.vars.outputs.full_tag }}"
           echo "Platform: ${{ steps.vars.outputs.platform }}"
+          echo "Registry: ${{ steps.vars.outputs.registry }}"
+          echo "Namespace: ${{ steps.vars.outputs.namespace }}"
           
           # 构建参数
           BUILD_ARGS=""
@@ -256,7 +300,8 @@ jobs:
           
           kolla-build \
             --base ${{ inputs.base_distro || 'ubuntu' }} \
-            --namespace ${{ env.REGISTRY }}/${{ env.OWNER }} \
+            --registry ${{ steps.vars.outputs.registry }} \
+            --namespace ${{ steps.vars.outputs.namespace }} \
             --tag ${{ steps.vars.outputs.full_tag }} \
             --config-file /etc/kolla/kolla-build.conf \
             --retries 3 \
@@ -267,36 +312,46 @@ jobs:
         if: success()
         run: |
           echo "Built images with tag: ${{ steps.vars.outputs.full_tag }}"
-          docker images | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" | grep ${{ steps.vars.outputs.full_tag }} || echo "No images found with expected tag"
+          docker images | grep "${{ steps.vars.outputs.registry }}/${{ steps.vars.outputs.namespace }}" | grep ${{ steps.vars.outputs.full_tag }} || echo "No images found with expected tag"
           echo ""
           echo "All images:"
-          docker images | grep "${{ env.REGISTRY }}/${{ env.OWNER }}" || echo "No images found"
+          docker images | grep "${{ steps.vars.outputs.registry }}/${{ steps.vars.outputs.namespace }}" || echo "No images found"
 
-      - name: Login to Container Registry
-        if: success() && (github.event_name == 'push' || inputs.push_images == true)
+      - name: Login to GitHub Container Registry
+        if: success() && (github.event_name == 'push' || inputs.push_images == true) && inputs.registry_type != 'harbor'
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.CR_PAT }}
+
+      - name: Login to Harbor Registry
+        if: success() && (github.event_name == 'push' || inputs.push_images == true) && inputs.registry_type == 'harbor'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.harbor_url }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
 
       - name: Push images
         if: success() && (github.event_name == 'push' || inputs.push_images == true)
         run: |
-          echo "Pushing images..."
+          echo "Pushing images to ${{ steps.vars.outputs.registry }}/${{ steps.vars.outputs.namespace }}..."
           
-          # 为镜像重新打标签,确保格式正确
-          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.OWNER }}" | grep -v "<none>"); do
-            if [[ "$image" == *"${{ env.REGISTRY }}/${{ env.OWNER }}"* ]]; then
+          # 推送所有匹配的镜像
+          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ steps.vars.outputs.namespace }}" | grep -v "<none>"); do
+            if [[ "$image" == *"${{ steps.vars.outputs.registry }}/${{ steps.vars.outputs.namespace }}"* ]]; then
               echo "Image already has correct registry prefix: $image"
               echo "Pushing: $image"
               docker push "$image"
             else
               # 重新打标签
-              new_tag="${{ env.REGISTRY }}/$image"
+              new_tag="${{ steps.vars.outputs.registry }}/$image"
               echo "Retagging $image -> $new_tag"
               docker tag "$image" "$new_tag"
               echo "Pushing: $new_tag"
               docker push "$new_tag"
             fi
           done
+          
+          echo "Push completed!"
