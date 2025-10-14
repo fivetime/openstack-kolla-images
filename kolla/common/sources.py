@@ -230,6 +230,10 @@ SOURCES = {
         'type': 'url',
         'location': ('$tarballs_base/openstack/networking-generic-switch/'
                      'networking-generic-switch-${openstack_branch}.tar.gz')},
+    'neutron-base-plugin-networking-bgpvpn': {
+        'type': 'url',
+        'location': ('$tarballs_base/openstack/networking-bgpvpn/'
+                     'networking-bgpvpn-${openstack_branch}.tar.gz')},
     'neutron-base-plugin-networking-sfc': {
         'type': 'url',
         'location': ('$tarballs_base/openstack/networking-sfc/'

@@ -1,0 +1,8 @@
+FROM {{ namespace }}/{{ image_prefix }}neutron-base:{{ tag }}
+LABEL maintainer="{{ maintainer }}"
+
+{% import "macros.j2" as macros %}
+
+{{ macros.kolla_patch_sources() }}
+
+USER neutron
