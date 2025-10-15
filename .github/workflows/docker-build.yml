@@ -139,7 +139,7 @@ jobs:
           
           [neutron-server-plugin-networking-bgpvpn]
           type = url
-          # location = https://tarballs.opendev.org/openstack/networking-bgpvpn/networking-bgpvpn-$BRANCH.tar.gz
+          location = https://tarballs.opendev.org/openstack/networking-bgpvpn/networking-bgpvpn-${BRANCH}.tar.gz
           enabled = true
           EOF
           
