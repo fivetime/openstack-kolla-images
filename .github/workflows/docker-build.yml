@@ -98,7 +98,7 @@ jobs:
           if [ "$RELEASE" = "master" ]; then
             BRANCH="master"
           else
-            BRANCH="stable/${RELEASE}"
+            BRANCH="stable-${RELEASE}"
           fi
           
           echo "OpenStack Release: $RELEASE"
