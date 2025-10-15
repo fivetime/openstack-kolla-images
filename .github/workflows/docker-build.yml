@@ -139,12 +139,12 @@ jobs:
           
           [neutron-server-plugin-networking-bgpvpn]
           type = git
-          location = https://github.com/fivetime/openstack-networking-bgpvpn.git
+          location = https://github.com/fivetime/openstack-networking-bgpvpn
           enabled = true
           
           [horizon-plugin-networking-bgpvpn]
           type = git
-          location = https://github.com/fivetime/openstack-networking-bgpvpn.git
+          location = https://github.com/fivetime/openstack-networking-bgpvpn
           enabled = true
           EOF
           
