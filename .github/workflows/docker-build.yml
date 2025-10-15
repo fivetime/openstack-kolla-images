@@ -137,15 +137,17 @@ jobs:
           # location = https://gitee.com/yourname/glance
           # reference = main
           
-          #[neutron-server-plugin-networking-bgpvpn]
-          #type = git
-          #location = https://github.com/fivetime/openstack-networking-bgpvpn
-          #enabled = true
+          [neutron-server-plugin-networking-bgpvpn]
+          type = git
+          location = https://github.com/fivetime/openstack-networking-bgpvpn.git
+          reference = master
+          enabled = true
           
-          #[horizon-plugin-networking-bgpvpn]
-          #type = git
-          #location = https://github.com/fivetime/openstack-networking-bgpvpn
-          #enabled = true
+          [horizon-plugin-networking-bgpvpn]
+          type = git
+          location = https://github.com/fivetime/openstack-networking-bgpvpn.git
+          reference = master
+          enabled = true
           EOF
           
           echo "Generated kolla-build.conf:"
