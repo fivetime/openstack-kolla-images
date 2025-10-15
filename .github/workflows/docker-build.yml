@@ -143,6 +143,11 @@ jobs:
           enabled = true
           EOF
           
+          [horizon-plugin-networking-bgpvpn]
+          type = url
+          location = https://tarballs.opendev.org/openstack/networking-bgpvpn/networking-bgpvpn-${BRANCH}.tar.gz
+          enabled = true
+          
           echo "Generated kolla-build.conf:"
           cat /etc/kolla/kolla-build.conf
 
