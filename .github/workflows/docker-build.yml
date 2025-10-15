@@ -126,12 +126,6 @@ jobs:
           # location = https://opendev.org/openstack/neutron
           # reference = $BRANCH
           
-          # 示例3: neutron 插件 (url 类型,自动使用对应版本)
-          # [neutron-server-plugin-networking-bgpvpn]
-          # type = url
-          # location = https://tarballs.opendev.org/openstack/networking-bgpvpn/networking-bgpvpn-$BRANCH.tar.gz
-          # enabled = true
-          
           # 其他服务可以在此添加自定义配置
           # [keystone-base]
           # type = git
@@ -142,6 +136,11 @@ jobs:
           # type = git
           # location = https://gitee.com/yourname/glance
           # reference = main
+          
+          [neutron-server-plugin-networking-bgpvpn]
+          type = url
+          # location = https://tarballs.opendev.org/openstack/networking-bgpvpn/networking-bgpvpn-$BRANCH.tar.gz
+          enabled = true
           EOF
           
           echo "Generated kolla-build.conf:"
