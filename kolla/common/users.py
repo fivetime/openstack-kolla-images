@@ -326,7 +326,7 @@ USERS = {
         'uid': 42488,
         'gid': 42488,
     },
-    'venus-user': {
+    'venus-user': {  # unused user (venus dropped)
         'uid': 42489,
         'gid': 42489,
     },
@@ -345,5 +345,9 @@ USERS = {
     'hsmusers-user': {
         'uid': 42493,  # This is not used, but the group ID is required.
         'gid': 42493,
-    }
+    },
+    'valkey-user': {
+        'uid': 42494,
+        'gid': 42494,
+    },
 }
