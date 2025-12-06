@@ -38,7 +38,7 @@ DISTRO_PRETTY_NAME = {
     'ubuntu': 'Ubuntu 24.04.* LTS',
 }
 
-OPENSTACK_RELEASE = '2025.2'
+OPENSTACK_RELEASE = 'master'
 # NOTE(mnasiadka): Using Epoxy here, since Debian OpenStack builds Flamingo
 #                  only for Trixie
 OPENSTACK_RELEASE_CODENAME = 'Epoxy'
@@ -64,9 +64,9 @@ _PROFILE_OPTS = [
                     'openvswitch',
                     'proxysql',
                     'rabbitmq',
-                    'redis',
                     'storm',
                     'tgtd',
+                    'valkey',
                 ],
                 help='Infra images'),
     cfg.ListOpt('main',
@@ -99,10 +99,10 @@ _PROFILE_OPTS = [
                     'masakari',
                     'mistral',
                     'octavia',
-                    'redis',
                     'tacker',
                     'telegraf',
                     'trove',
+                    'valkey',
                     'zookeeper',
                     'zun',
                 ],
