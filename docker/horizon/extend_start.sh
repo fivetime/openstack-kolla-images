@@ -192,14 +192,6 @@ function config_watcher_dashboard {
             "/etc/openstack-dashboard/watcher_policy.json"
 }
 
-function config_zun_dashboard {
-    for file in ${SITE_PACKAGES}/zun_ui/enabled/_*[^__].py; do
-        config_dashboard "${ENABLE_ZUN:-no}" \
-            "${SITE_PACKAGES}/zun_ui/enabled/${file##*/}" \
-            "${SITE_PACKAGES}/openstack_dashboard/local/enabled/${file##*/}"
-    done
-}
-
 # Regenerate the compressed javascript and css if any configuration files have
 # changed.  Use a static modification date when generating the tarball
 # so that we only trigger on content changes.
@@ -238,7 +230,6 @@ config_octavia_dashboard
 config_tacker_dashboard
 config_trove_dashboard
 config_watcher_dashboard
-config_zun_dashboard
 
 if settings_changed; then
     ${MANAGE_PY} collectstatic --noinput --clear
@@ -263,5 +254,3 @@ fi
 if [[ -f ${SITE_PACKAGES}/openstack_dashboard/local/.secret_key_store ]] && [[ $(stat -c %U ${SITE_PACKAGES}/openstack_dashboard/local/.secret_key_store) != "horizon" ]]; then
     chown horizon ${SITE_PACKAGES}/openstack_dashboard/local/.secret_key_store
 fi
-
-. /usr/local/bin/kolla_httpd_setup
