@@ -1,0 +1,16 @@
+FROM {{ namespace }}/{{ image_prefix }}ovsdpdk:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block ovsdpdk_vswitchd_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+COPY extend_start.sh /usr/local/bin/kolla_ovsdpdk_extend_start
+RUN chmod 644 /usr/local/bin/kolla_ovsdpdk_extend_start
+
+{{ macros.kolla_patch_sources() }}
+
+{% block ovsdpdk_vswitchd_footer %}{% endblock %}
+{% block footer %}{% endblock %}

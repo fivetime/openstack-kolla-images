@@ -1,0 +1,45 @@
+FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block keystone_base_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{{ macros.configure_user(name='keystone') }}
+
+{% if base_package_type == 'rpm' %}
+
+{{ macros.enable_extra_repos(['epel']) }}
+
+    {% set keystone_base_packages = [
+        'cyrus-sasl-devel',
+        'openldap-devel',
+    ] %}
+
+{% elif base_package_type == 'deb' %}
+    {% set keystone_base_packages = [
+        'libldap-common',
+        'libldap2-dev',
+        'libsasl2-dev',
+    ] %}
+{% endif %}
+{{ macros.install_packages(keystone_base_packages | customizable("packages")) }}
+
+{% block keystone_source_install %}
+ADD keystone-base-archive /keystone-base-source
+
+{% set keystone_base_pip_packages = [
+    '/keystone[ldap]',
+] %}
+
+RUN ln -s keystone-base-source/* keystone \
+    && {{ macros.install_pip(keystone_base_pip_packages | customizable("pip_packages")) }} \
+    && mkdir -p /etc/keystone \
+    && cp -r /keystone/etc/* /etc/keystone/
+{% endblock %}
+
+{{ macros.kolla_patch_sources() }}
+
+{% block keystone_base_footer %}{% endblock %}

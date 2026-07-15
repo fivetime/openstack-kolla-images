@@ -1,0 +1,13 @@
+FROM {{ namespace }}/{{ image_prefix }}heat-base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block heat_api_cfn_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{{ macros.kolla_patch_sources() }}
+
+{% block heat_api_cfn_footer %}{% endblock %}
+{% block footer %}{% endblock %}

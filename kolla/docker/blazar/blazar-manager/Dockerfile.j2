@@ -1,0 +1,15 @@
+FROM {{ namespace }}/{{ image_prefix }}blazar-base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block blazar_manager_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{{ macros.kolla_patch_sources() }}
+
+{% block blazar_manager_footer %}{% endblock %}
+{% block footer %}{% endblock %}
+
+USER blazar

@@ -1,0 +1,17 @@
+FROM {{ namespace }}/{{ image_prefix }}ironic-conductor:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+USER root
+
+{% block ironic_prometheus_exporter_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+ENV IRONIC_CONFIG /etc/ironic/ironic.conf
+
+{{ macros.kolla_patch_sources() }}
+
+{% block ironic_prometheus_exporter_footer %}{% endblock %}
+{% block footer %}{% endblock %}

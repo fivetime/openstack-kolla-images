@@ -1,0 +1,14 @@
+FROM {{ namespace }}/{{ image_prefix }}base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block letsencrypt_base_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+COPY extend_start.sh /usr/local/bin/kolla_extend_start
+
+{{ macros.kolla_patch_sources() }}
+
+{% block letsencrypt_base_footer %}{% endblock %}

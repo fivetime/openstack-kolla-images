@@ -40,6 +40,8 @@ from oslo_config import cfg
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(os.path.realpath(__file__)), '../..'))
+KOLLA_PACKAGE_DIR = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), '..'))
 
 
 class Image(object):
@@ -213,6 +215,7 @@ class KollaWorker(object):
 
     def _get_images_dir(self):
         possible_paths = (
+            KOLLA_PACKAGE_DIR,
             PROJECT_ROOT,
             os.path.join(sys.prefix, 'share/kolla'),
             os.path.join(sys.prefix, 'local/share/kolla'),
@@ -362,9 +365,6 @@ class KollaWorker(object):
         for path in self.docker_build_paths:
             template_name = "Dockerfile.j2"
             image_name = path.split("/")[-1]
-            ts = time.time()
-            build_date = datetime.datetime.fromtimestamp(ts).strftime(
-                '%Y%m%d')
             values = {'base_distro': self.base,
                       'base_image': self.conf.base_image,
                       'base_distro_tag': self.base_tag,
@@ -390,7 +390,6 @@ class KollaWorker(object):
                       'users': self.get_users(),
                       'distro_package_manager': self.distro_package_manager,
                       'rpm_setup': self.rpm_setup,
-                      'build_date': build_date,
                       'clean_package_cache': self.clean_package_cache,
                       'patches_path': self.patches_path}
             env = jinja2.sandbox.SandboxedEnvironment(

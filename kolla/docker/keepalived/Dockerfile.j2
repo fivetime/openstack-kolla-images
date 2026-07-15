@@ -1,0 +1,34 @@
+FROM {{ namespace }}/{{ image_prefix }}base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block keepalived_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{{ macros.enable_extra_repos(['mariadb']) }}
+
+{% if base_package_type == 'rpm' %}
+    {% set keepalived_packages = [
+        'keepalived',
+        'MariaDB-client'
+    ] %}
+{% elif base_package_type == 'deb' %}
+    {% set keepalived_packages = [
+        'keepalived',
+        'mariadb-client'
+    ] %}
+{% endif %}
+{{ macros.install_packages(keepalived_packages | customizable("packages")) }}
+
+COPY check_alive.sh /
+
+COPY extend_start.sh /usr/local/bin/kolla_extend_start
+RUN chmod 644 /usr/local/bin/kolla_extend_start \
+    && chmod 755 /check_alive.sh
+
+{{ macros.kolla_patch_sources() }}
+
+{% block keepalived_footer %}{% endblock %}
+{% block footer %}{% endblock %}

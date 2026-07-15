@@ -1,0 +1,42 @@
+FROM {{ namespace }}/{{ image_prefix }}base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block apache_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{% if base_package_type == 'rpm' %}
+{{ macros.enable_extra_repos(['epel']) }}
+    {% set apache_packages = [
+        'httpd',
+        'mod_ssl',
+        'mod_auth_mellon',
+        'mod_auth_openidc',
+        'mod_proxy_uwsgi'
+    ] %}
+{% elif base_package_type == 'deb' %}
+    {% set apache_packages = [
+        'apache2',
+        'ca-certificates',
+        'libapache2-mod-auth-mellon',
+        'libapache2-mod-auth-openidc'
+    ] %}
+{% endif %}
+
+{{ macros.install_packages(apache_packages | customizable("packages")) }}
+
+{% if base_package_type == 'rpm' %}
+RUN sed -i -r 's,^(Listen 80),#\1,' /etc/httpd/conf/httpd.conf \
+    && sed -i -r 's,^(Listen 443),#\1,' /etc/httpd/conf.d/ssl.conf
+{% elif base_package_type == 'deb' %}
+RUN echo > /etc/apache2/ports.conf
+{% endif %}
+
+COPY extend_start.sh /usr/local/bin/kolla_extend_start
+COPY httpd_setup.sh /usr/local/bin/kolla_httpd_setup
+RUN chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_httpd_setup
+USER root
+
+{% block apache_footer %}{% endblock %}

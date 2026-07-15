@@ -4,11 +4,11 @@ on:
   push:
     branches: [main, master]
     paths:
-      - 'docker/horizon/**'
+      - 'kolla/docker/horizon/**'
   pull_request:
     branches: [main, master]
     paths:
-      - 'docker/horizon/**'
+      - 'kolla/docker/horizon/**'
   workflow_dispatch:
     inputs:
       base_distro:

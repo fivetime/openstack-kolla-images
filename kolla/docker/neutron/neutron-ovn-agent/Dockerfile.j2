@@ -1,0 +1,20 @@
+FROM {{ namespace }}/{{ image_prefix }}neutron-base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block neutron_ovn_agent_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{% set neutron_ovn_agent_packages = [
+] %}
+
+{{ macros.install_packages(neutron_ovn_agent_packages | customizable("packages")) }}
+
+{{ macros.kolla_patch_sources() }}
+
+{% block neutron_ovn_agent_footer %}{% endblock %}
+{% block footer %}{% endblock %}
+
+USER neutron

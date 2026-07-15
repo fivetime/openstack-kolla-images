@@ -1,0 +1,25 @@
+FROM {{ namespace }}/{{ image_prefix }}prometheus-base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block prometheus_mtail_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{% block prometheus_mtail_install %}
+ADD prometheus-mtail-archive /prometheus-mtail-source
+
+RUN cp /prometheus-mtail-source/* /opt/
+{% endblock %}
+
+{{ macros.kolla_patch_sources() }}
+
+{% block prometheus_mtail_footer %}{% endblock %}
+{% block footer %}{% endblock %}
+
+# NOTE(dszumski): We run as root so that mtail can scrape root owned logs
+# such as /var/log/secure which are mounted into the container as read only
+# for auditing purposes. Longer term we should use a more secure mechanism
+# for tailing these logs.
+USER root

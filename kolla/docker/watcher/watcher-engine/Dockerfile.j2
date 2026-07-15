@@ -1,0 +1,15 @@
+FROM {{ namespace }}/{{ image_prefix }}watcher-base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block watcher_engine_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{{ macros.kolla_patch_sources() }}
+
+{% block watcher_engine_footer %}{% endblock %}
+{% block footer %}{% endblock %}
+
+USER watcher
