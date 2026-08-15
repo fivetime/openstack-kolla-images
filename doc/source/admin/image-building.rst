@@ -372,9 +372,22 @@ verification purposes.
 Python packages build options
 -----------------------------
 
-The block ``base_pip_conf`` in the ``base`` Dockerfile can be used to provide
-the PyPI build customisation options via the standard environment variables
-like ``PIP_INDEX_URL``, ``PIP_TRUSTED_HOST``, etc.
+The PyPI mirror used during image builds can be configured directly in
+``kolla-build.conf``:
+
+.. path /etc/kolla/kolla-build.conf
+.. code-block:: ini
+
+   [DEFAULT]
+   pip_index_url = https://pypi.example.com/simple
+   pip_trusted_host = pypi.example.com
+   pip_extra_index_url = https://wheels.example.com/simple
+
+These options set the ``PIP_INDEX_URL``, ``PIP_TRUSTED_HOST``, and
+``PIP_EXTRA_INDEX_URL`` ARG variables in the base image via the
+``base_pip_conf`` Dockerfile block. The ``pip_extra_index_url`` option is
+optional. For further customisation, the block ``base_pip_conf`` can be
+overridden via the template_override mechanism.
 
 To override PYPI upper-constraints of all OpenStack images, you can
 define the source location of openstack-base. in ``kolla-build.conf``.
@@ -769,6 +782,52 @@ overridden — otherwise removing the shared file would silently disable them.
 Kolla validates this at build time and raises an error listing the missing
 overrides. For Rocky Linux this means overriding ``baseos`` or ``appstream``
 requires also overriding ``crb``.
+
+Build-time-only repositories
+""""""""""""""""""""""""""""
+
+Repositories that point to CI mirrors or other infrastructure-internal URLs
+should not be baked into the final image — they may be unreachable at runtime
+and would expose internal infrastructure details. Mark such repositories with
+``build_only: true`` to have kolla automatically restore or remove the
+repository file at the end of each image build.
+
+When ``build_only: true`` is set on a repository:
+
+* **Before** writing the mirror configuration, kolla backs up the existing
+  repository file (if any) to ``/tmp/kolla-repos-backup/``.
+* The repository file is written normally so all package installations in that
+  image can use the mirror.
+* **After** all package installations, kolla injects a cleanup step into every
+  rendered Dockerfile that restores the original file from the backup, or
+  removes the file entirely if no original existed.
+
+This means the repository files in the final image contain the upstream URLs
+(or are absent, leaving the distro defaults in place) rather than mirror URLs.
+
+Example — Debian with a CI mirror marked build-time-only:
+
+.. code-block:: yaml
+
+   debian:
+     debian:
+       build_only: true
+       component: "main"
+       gpg_key: "/usr/share/keyrings/debian-archive-keyring.gpg"
+       suite: "trixie trixie-updates trixie-backports"
+       url: "http://ci-mirror.internal/debian"
+     debian-security:
+       build_only: true
+       component: "main"
+       gpg_key: "/usr/share/keyrings/debian-archive-keyring.gpg"
+       suite: "trixie-security"
+       url: "http://ci-mirror.internal/debian-security"
+
+.. note::
+
+   ``build_only: true`` is only effective for non-distro repository entries
+   (those that write a ``.repo`` or ``.sources`` file). Repositories with
+   ``distro: True`` are a no-op in ``handle_repos()`` and require no cleanup.
 
 Red Hat
 ^^^^^^^
